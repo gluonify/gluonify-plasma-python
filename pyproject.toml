@@ -1,17 +1,16 @@
-# Workspace root (not a distribution): the two distributions live in packages/. See README "Why uv".
+# Workspace root (not a distribution): the distribution gluonify lives in packages/. See README "Why uv".
 [project]
 name = "gluonify-plasma-python"
 version = "0.1.0"
 description = "Workspace of the Gluonify Python SDK (not published)"
 requires-python = ">=3.13"
-dependencies = ["gluonify", "gluonify-fastapi"]
+dependencies = ["gluonify[fastapi]"]
 
 [tool.uv]
 package = false
 
 [tool.uv.sources]
 gluonify = { workspace = true }
-gluonify-fastapi = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*"]
@@ -31,7 +30,7 @@ addopts = "-q --strict-markers"
 filterwarnings = ["error", "ignore:Using `httpx` with `starlette.testclient`"]
 
 [tool.coverage.run]
-source = ["gluonify", "gluonify_fastapi"]
+source = ["gluonify"]
 branch = true
 
 [tool.coverage.report]
@@ -47,7 +46,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "RUF", "SIM", "PT"]
 ignore = ["S101"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["gluonify", "gluonify_fastapi"]
+known-first-party = ["gluonify"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S108"]
@@ -55,4 +54,4 @@ known-first-party = ["gluonify", "gluonify_fastapi"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-packages = ["gluonify", "gluonify_fastapi"]
+packages = ["gluonify"]

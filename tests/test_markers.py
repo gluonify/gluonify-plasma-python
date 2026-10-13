@@ -22,8 +22,9 @@ def write_dist(site: Path, name: str, entry_points: str | None, folder: str | No
 def test_each_distribution_declares_the_services_it_reaches() -> None:
     data = tomllib.loads((ROOT / "packages/gluonify/pyproject.toml").read_text())
     assert data["project"]["entry-points"]["gluonify.uses"] == {"charm": "gluonify.charm"}
-    fastapi = tomllib.loads((ROOT / "packages/gluonify-fastapi/pyproject.toml").read_text())
-    assert "gluonify.uses" not in fastapi["project"].get("entry-points", {})
+    # The fastapi extra adds dependencies, never a marker; there is no other distribution.
+    assert set(data["project"]["optional-dependencies"]) == {"fastapi"}
+    assert not (ROOT / "packages/gluonify-fastapi").exists()
 
 
 def test_installed_metadata_carries_the_markers() -> None:

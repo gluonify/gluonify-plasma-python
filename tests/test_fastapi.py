@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
 from gluonify import CharmVerifier, GluonifyServices, GluonifyServicesError, Principal
-from gluonify_fastapi import GluonifyAuth, create_app, current_principal, optional_principal, require_roles
+from gluonify.fastapi import GluonifyAuth, create_app, current_principal, optional_principal, require_roles
 
 ISS = "https://id.gluonify.lan/realms/gluonify"
 
@@ -186,3 +186,14 @@ def test_openapi_and_swagger_paths(charm: FakeCharm) -> None:
 def test_top_on_app_state() -> None:
     app = create_app("x", audience="a", services=GluonifyServices({"APP_K": "v"}))
     assert app.state.top.get("k") == "v"
+
+
+def test_import_without_the_extra_says_how_to_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+    import sys
+
+    for name in [m for m in sys.modules if m == "gluonify.fastapi" or m.startswith("gluonify.fastapi.")]:
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "fastapi", None)
+    with pytest.raises(ImportError, match=r'pip install "gluonify\[fastapi\]"'):
+        importlib.import_module("gluonify.fastapi")

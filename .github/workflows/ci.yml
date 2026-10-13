@@ -29,5 +29,5 @@ jobs:
         run: uv run mypy
       - name: Tests
         run: uv run pytest --cov --cov-report=term
-      - name: Build both distributions
-        run: uv build --all-packages -o dist
+      - name: Build the distribution
+        run: uv build --package gluonify -o dist

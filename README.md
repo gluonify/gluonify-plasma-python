@@ -4,14 +4,16 @@ The **Python SDK of [Gluonify](https://gluonify.io)**: what a Python application
 
 Python applications run on Gluonify through **path 3** of `gluonify-codex/python.md` (§ 3 bis): the `python3` of Debian 13 (CPython **3.13**) on each node, the code and its venv in a signed gzip built by Bup, the same systemd sandbox as native applications (`MemoryDenyWriteExecute=yes`). The web server is **FastAPI** with uvicorn, one process per instance (question 4 of python.md).
 
-Two distributions, published on PyPI under the `gluonify` organisation (question 5):
+One distribution, **`gluonify`**, published on PyPI under the `gluonify` organisation (question 5), with an optional extra:
 
-| Distribution | Import | Content |
+| Install | Import | Content |
 |---|---|---|
-| `gluonify` | `gluonify` | discovery of platform services (`GLUONIFY_SERVICE_<APP>_URL`, service tokens), Charm (JWT verification against the JWKS, ES256), Top (configuration and secrets), the `uses` marker reader |
-| `gluonify-fastapi` | `gluonify_fastapi` | a dependency that authenticates a request with Charm and checks roles, health endpoints, the app factory |
+| `pip install gluonify` | `gluonify` | discovery of platform services (`GLUONIFY_SERVICE_<APP>_URL`, service tokens), Charm (JWT verification against the JWKS, ES256), Top (configuration and secrets), the `uses` marker reader |
+| `pip install "gluonify[fastapi]"` | `gluonify.fastapi` | adds fastapi and uvicorn: a dependency that authenticates a request with Charm and checks roles, health endpoints, the app factory |
 
-The starter application that uses them is [`gluonify-source-python`](https://github.com/gluonify/gluonify-source-python).
+Importing `gluonify.fastapi` without the extra raises an `ImportError` that gives the `pip install` command.
+
+The starter application that uses it is [`gluonify-source-python`](https://github.com/gluonify/gluonify-source-python).
 
 ## Contents
 1. [What is supported, and what is not yet](#1-what-is-supported-and-what-is-not-yet)
@@ -43,21 +45,22 @@ The starter application that uses them is [`gluonify-source-python`](https://git
 | FastAPI: health `/q/health/live`, `/q/health/ready` (MicroProfile Health body, 503 when DOWN) | ✅ | same addresses as Quarkus applications |
 | FastAPI: app factory (`create_app`: OpenAPI `/q/openapi`, Swagger UI `/q/swagger-ui`, 400 with `violations`) | ✅ | Swagger UI does not follow a light/dark theme (no interface here) |
 | `uses` inference (`[gluonify.uses]` entry points of `gluonify`/`gluonify-*`: `gluonify` -> `charm`; distributions `neo4j`/`neomodel` -> `gdown`) | ✅ SDK side | Bup does not read them yet (contract in [§8](#8-the-uses-markers-contract-read-by-bup)) |
+| FastAPI as the extra `gluonify[fastapi]` of the one distribution (`gluonify.fastapi`; clear `ImportError` without the extra) | ✅ | the former `gluonify-fastapi` distribution is gone (never published); the name stays reserved |
 | Python ≥ 3.13, typed (`py.typed`, mypy strict), ruff | ✅ | |
-| Publication on PyPI by Trusted Publishing with PEP 740 attestations | 🟡 | workflow ready for both distributions; nothing published, the two trusted publishers are to be added by the user ([§11](#11-publishing-on-pypi)) |
+| Publication on PyPI by Trusted Publishing with PEP 740 attestations | 🟡 | workflow ready for `gluonify`; nothing published, the trusted publisher is to be added by the user ([§11](#11-publishing-on-pypi)) |
 | Clients for Crystallon, Fermion, Photon | ❌ | Java only |
 | End-to-end test on a real cluster | ❌ | phase V3-4 of python.md (an e2e like `e2e-source.sh`) |
 
 ## 2. Quick start
 
 ```bash
-pip install gluonify-fastapi            # pulls gluonify
+pip install "gluonify[fastapi]"         # gluonify with fastapi and uvicorn
 ```
 
 ```python
 from fastapi import Depends
 from gluonify import Principal
-from gluonify_fastapi import create_app, require_roles, serve
+from gluonify.fastapi import create_app, require_roles, serve
 
 app = create_app("shop", audience="gluonify-shop")
 
@@ -124,6 +127,8 @@ The driver refuses a custom CA with a `+s` scheme, hence `encrypted=True` with `
 
 ## 7. FastAPI
 
+`pip install "gluonify[fastapi]"`, then `from gluonify.fastapi import ...`. Without the extra, `import gluonify.fastapi` raises an `ImportError` naming the missing module and the install command; the rest of `gluonify` never imports FastAPI.
+
 `create_app(title, audience=..., version=..., services=..., dev_identity=...)` returns a FastAPI application with:
 
 - `app.state.gluonify` (`GluonifyServices`), `app.state.top` (`Top`), `app.state.health` (`Health`), `app.state.gluonify_auth` (`GluonifyAuth`, the Charm verifier being built on the **first** authenticated request, so the app starts even if Charm is not ready);
@@ -158,7 +163,7 @@ charm = gluonify.charm
 3 bis. **Known client distributions**: whatever their marker, a distribution whose normalised name is `neo4j` or `neomodel` infers **`gdown`** (`usesSources`: `{"gdown": ["neo4j"]}`). Only its `METADATA` is read; nothing is imported. The list lives in `gluonify.markers.CLIENTS`.
 4. **Merge**, as for Java: the declared services (request, else `gluonify.json`) as they are, then the inferred ones not declared, as **`?name`** (optional). Result fields `usesInferred`, `usesSources` (`{"charm": ["gluonify"], "gdown": ["neo4j"]}`), `usesEffective`.
 
-What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the distribution `neo4j` or `neomodel` -> `gdown`, so only the apps that really reach gDown get `?gdown`; `gluonify-fastapi` -> none (it reaches services only through `gluonify`); Top has no marker (the agent injects its values, `"top": true` is not a `uses`). `gdownDatabase` is **not** inferred for Python yet: declare `"gdownDatabase": true` in `gluonify.json`.
+What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the distribution `neo4j` or `neomodel` -> `gdown`, so only the apps that really reach gDown get `?gdown`; the extra `fastapi` -> none (it adds dependencies, not markers: `gluonify.fastapi` reaches services only through `gluonify`, whose `charm` marker is there with or without the extra); Top has no marker (the agent injects its values, `"top": true` is not a `uses`). `gdownDatabase` is **not** inferred for Python yet: declare `"gdownDatabase": true` in `gluonify.json`.
 
 ## 9. Configuration reference
 
@@ -176,26 +181,24 @@ There is nothing to configure on the platform. Variables read:
 
 ## 10. Development
 
-**Why uv** (and not hatch): uv gives a **workspace** (two distributions, one lock file, editable installs of each other) and a **universal lock file with hashes** (`uv.lock`), and `uv export --format requirements-txt` produces the `--require-hashes` file that Bup installs with plain pip (python.md § 3 bis.3). Hatch has no cross-project lock. The build backend stays **hatchling** (standard PEP 517, what PyPI and pip see), so uv is only a development tool.
+**Why uv** (and not hatch): uv gives a **workspace** (the distribution in `packages/`, one lock file, editable install) and a **universal lock file with hashes** (`uv.lock`), and `uv export --format requirements-txt` produces the `--require-hashes` file that Bup installs with plain pip (python.md § 3 bis.3). Hatch has no cross-project lock. The build backend stays **hatchling** (standard PEP 517, what PyPI and pip see), so uv is only a development tool.
 
 ```bash
-uv sync                    # Python 3.13 (.python-version), both distributions in editable mode, dev group
-uv run pytest --cov        # 90 tests, coverage >= 90 % required (99 % today)
+uv sync                    # Python 3.13 (.python-version), gluonify[fastapi] in editable mode, dev group
+uv run pytest --cov        # 91 tests, coverage >= 90 % required (99 % today)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                # strict
-uv build --all-packages    # dist/gluonify-*.whl, dist/gluonify_fastapi-*.whl
+uv build --package gluonify  # dist/gluonify-*.whl and sdist
 ```
 
-Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, `markers.py`), `packages/gluonify-fastapi/src/gluonify_fastapi/` (`auth.py`, `health.py`, `app.py`), `tests/` (Charm faked by a P-256 key pair and its JWKS). CI: `.github/workflows/ci.yml` on every push.
+Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, `markers.py`), `packages/gluonify/src/gluonify/fastapi/` (`auth.py`, `health.py`, `app.py`), `tests/` (Charm faked by a P-256 key pair and its JWKS). CI: `.github/workflows/ci.yml` on every push.
 
 ## 11. Publishing on PyPI
 
-`.github/workflows/publish.yml` publishes **both** distributions by **Trusted Publishing** (OIDC of GitHub Actions, no token stored) with **PEP 740 attestations**, only on a tag `vX.Y.Z` whose value equals both versions, after the tests, in the GitHub environment **`pypi`**, which must require a manual approval. To do once, by the user:
+`.github/workflows/publish.yml` publishes the distribution **`gluonify`** by **Trusted Publishing** (OIDC of GitHub Actions, no token stored) with **PEP 740 attestations**, only on a tag `vX.Y.Z` whose value equals its version, after the tests, in the GitHub environment **`pypi`**, which must require a manual approval. To do once, by the user:
 
 1. **GitHub**, repository `gluonify/gluonify-plasma-python` -> Settings -> Environments -> New environment `pypi` -> *Required reviewers*: yourself; *Deployment branches and tags*: tags `v*` only.
-2. **PyPI**, account of the `gluonify` organisation -> *Your projects* -> *Publishing* -> *Add a new pending publisher* (the projects do not exist yet), **twice**:
-   - PyPI project name `gluonify`, owner `gluonify`, repository `gluonify-plasma-python`, workflow `publish.yml`, environment `pypi`;
-   - PyPI project name `gluonify-fastapi`, same owner, repository, workflow and environment.
-3. Reserve the derived names against typosquatting (python.md question 5), for example `gluonify-gdown`, `gluonify-charm`, `gluonify-top`, `gluonify-sdk`, `gluonify-flask`, as pending publishers too, or as empty placeholder releases.
-4. Release: set the same version in both `pyproject.toml` (and `gluonify==` in `gluonify-fastapi`), commit, `git tag v0.1.0 && git push origin v0.1.0`, then approve the `pypi` deployment in the Actions tab.
+2. **PyPI**, account of the `gluonify` organisation -> *Your projects* -> *Publishing* -> *Add a new pending publisher* (the project does not exist yet), **once**: PyPI project name `gluonify`, owner `gluonify`, repository `gluonify-plasma-python`, workflow `publish.yml`, environment `pypi`. FastAPI is the extra `gluonify[fastapi]`, not a project of its own.
+3. Reserve the derived names against typosquatting (python.md question 5), for example `gluonify-fastapi`, `gluonify-gdown`, `gluonify-charm`, `gluonify-top`, `gluonify-sdk`, `gluonify-flask`, as pending publishers too, or as empty placeholder releases.
+4. Release: set the version in `packages/gluonify/pyproject.toml` (and `__version__` in `gluonify/__init__.py`), commit, `git tag v0.1.0 && git push origin v0.1.0`, then approve the `pypi` deployment in the Actions tab.
 5. Check: `pip download gluonify==0.1.0` and the "Provenance" of the files on PyPI.

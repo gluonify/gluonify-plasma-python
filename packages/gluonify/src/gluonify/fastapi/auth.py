@@ -24,10 +24,10 @@ VerifierFactory = Callable[[], CharmVerifier]
 class GluonifyAuth:
     """How the application authenticates requests.
 
-    :param factory: builds the verifier on first use (default of :func:`gluonify_fastapi.create_app`:
+    :param factory: builds the verifier on first use (default of :func:`gluonify.fastapi.create_app`:
         ``CharmVerifier.from_env``); a failure answers 503 and is retried at the next request
     :param dev_identity: an identity given to requests WITHOUT a token, for local development only;
-        :func:`gluonify_fastapi.create_app` refuses it on the platform
+        :func:`gluonify.fastapi.create_app` refuses it on the platform
     """
 
     def __init__(self, factory: VerifierFactory | None, *, dev_identity: Principal | None = None) -> None:
@@ -78,7 +78,7 @@ def _unauthorized(message: str) -> HTTPException:
 def _auth(request: Request) -> GluonifyAuth:
     auth = getattr(request.app.state, "gluonify_auth", None)
     if not isinstance(auth, GluonifyAuth):
-        raise HTTPException(500, "the application was not created by gluonify_fastapi.create_app")
+        raise HTTPException(500, "the application was not created by gluonify.fastapi.create_app")
     return auth
 
 

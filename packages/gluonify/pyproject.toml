@@ -1,15 +1,16 @@
 [project]
 name = "gluonify"
 version = "0.1.0"
-description = "Gluonify SDK: zero-configuration discovery of platform services, Charm token verification, Top configuration"
+description = "Gluonify SDK: zero-configuration discovery of platform services, Charm token verification, Top configuration, optional FastAPI integration"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "Apache-2.0"
 authors = [{ name = "Gluonify" }]
-keywords = ["gluonify", "paas", "charm", "jwt"]
+keywords = ["gluonify", "paas", "charm", "jwt", "fastapi"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
+    "Framework :: FastAPI",
     "Typing :: Typed",
     "Operating System :: POSIX :: Linux",
 ]
@@ -17,11 +18,19 @@ dependencies = [
     "pyjwt[crypto]>=2.10",
 ]
 
+[project.optional-dependencies]
+# pip install "gluonify[fastapi]": the gluonify.fastapi subpackage (auth dependencies, health, app factory, serve).
+fastapi = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+]
+
 [project.urls]
 Homepage = "https://gluonify.io"
 Source = "https://github.com/gluonify/gluonify-plasma-python"
 
 # The "uses" marker read by Bup (contract: README "The uses markers"). Name = service, value = the module that reaches it.
+# The fastapi extra adds no marker: gluonify.fastapi reaches services only through gluonify.
 # gdown is inferred by Bup from the neo4j / neomodel distributions themselves (README "The uses markers").
 [project.entry-points."gluonify.uses"]
 charm = "gluonify.charm"
