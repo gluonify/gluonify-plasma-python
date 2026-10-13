@@ -1,7 +1,7 @@
 # Publication on PyPI by Trusted Publishing (OIDC): no token is stored anywhere.
 # Triggered only by a release tag vX.Y.Z; the job waits for a manual approval of the "pypi" environment.
 # PyPI side (once per project, see README "Publishing"): trusted publisher owner=gluonify, repository=gluonify-plasma-python,
-# workflow=publish.yml, environment=pypi, for EACH of the three projects "gluonify", "gluonify-fastapi" and "gluonify-gdown".
+# workflow=publish.yml, environment=pypi, for BOTH projects "gluonify" and "gluonify-fastapi".
 name: publish
 
 on:
@@ -27,10 +27,10 @@ jobs:
           uv run ruff check .
           uv run mypy
           uv run pytest
-      - name: The tag matches the three versions
+      - name: The tag matches both versions
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          for p in packages/gluonify packages/gluonify-fastapi packages/gluonify-gdown; do
+          for p in packages/gluonify packages/gluonify-fastapi; do
             v=$(python3 -c "import tomllib,sys;print(tomllib.load(open('$p/pyproject.toml','rb'))['project']['version'])")
             test "$v" = "$tag" || { echo "$p is $v, tag is $tag"; exit 1; }
           done
@@ -54,7 +54,7 @@ jobs:
         with:
           name: dist
           path: dist/
-      - name: Publish gluonify, gluonify-fastapi and gluonify-gdown
+      - name: Publish gluonify and gluonify-fastapi
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/

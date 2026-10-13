@@ -22,7 +22,7 @@ Homepage = "https://gluonify.io"
 Source = "https://github.com/gluonify/gluonify-plasma-python"
 
 # The "uses" marker read by Bup (contract: README "The uses markers"). Name = service, value = the module that reaches it.
-# gDown is in its own distribution (gluonify-gdown), so that only the apps that install it get ?gdown.
+# gdown is inferred by Bup from the neo4j / neomodel distributions themselves (README "The uses markers").
 [project.entry-points."gluonify.uses"]
 charm = "gluonify.charm"
 

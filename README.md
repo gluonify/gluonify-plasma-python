@@ -4,12 +4,11 @@ The **Python SDK of [Gluonify](https://gluonify.io)**: what a Python application
 
 Python applications run on Gluonify through **path 3** of `gluonify-codex/python.md` (§ 3 bis): the `python3` of Debian 13 (CPython **3.13**) on each node, the code and its venv in a signed gzip built by Bup, the same systemd sandbox as native applications (`MemoryDenyWriteExecute=yes`). The web server is **FastAPI** with uvicorn, one process per instance (question 4 of python.md).
 
-Three distributions, published on PyPI under the `gluonify` organisation (question 5):
+Two distributions, published on PyPI under the `gluonify` organisation (question 5):
 
 | Distribution | Import | Content |
 |---|---|---|
 | `gluonify` | `gluonify` | discovery of platform services (`GLUONIFY_SERVICE_<APP>_URL`, service tokens), Charm (JWT verification against the JWKS, ES256), Top (configuration and secrets), the `uses` marker reader |
-| `gluonify-gdown` | `gluonify_gdown` | gDown on the dedicated database: official `neo4j` driver over Bolt **with TLS** when the platform injects `GLUONIFY_GDOWN_BOLT_URL`, gDown's HTTP API otherwise; a separate distribution so that only the apps that install it get `?gdown` |
 | `gluonify-fastapi` | `gluonify_fastapi` | a dependency that authenticates a request with Charm and checks roles, health endpoints, the app factory |
 
 The starter application that uses them is [`gluonify-source-python`](https://github.com/gluonify/gluonify-source-python).
@@ -20,7 +19,7 @@ The starter application that uses them is [`gluonify-source-python`](https://git
 3. [Services: discovery and tokens](#3-services-discovery-and-tokens)
 4. [Charm: incoming tokens](#4-charm-incoming-tokens)
 5. [Top: configuration and secrets](#5-top-configuration-and-secrets)
-6. [gDown: Bolt with TLS, or HTTP](#6-gdown-bolt-with-tls-or-http)
+6. [How to reach gDown](#6-how-to-reach-gdown)
 7. [FastAPI](#7-fastapi)
 8. [The uses markers (contract read by Bup)](#8-the-uses-markers-contract-read-by-bup)
 9. [Configuration reference](#9-configuration-reference)
@@ -39,34 +38,28 @@ The starter application that uses them is [`gluonify-source-python`](https://git
 | Charm: issuing tokens, OIDC sign-in of a browser (authorization code + PKCE) | ❌ | the browser side is the `@gluonify/ui` kit; a Python app only verifies |
 | Top: configuration and secrets injected by the node agent (`APP_<KEY>` with `"top": true`, `<KEY>` with a literal `topNamespace`) | ✅ | no network call: Strange writes the keys into the environment before the start |
 | Top: reading the vault at run time (HTTP API) | ❌ | not needed by applications; values change at the next start |
-| gDown (`gluonify-gdown`): dedicated database (`GLUONIFY_GDOWN_DATABASE|USER|PASSWORD`, vault keys `APP_GLUONIFY_GDOWN_*` win) over Bolt with TLS only (`bolt+s`/`neo4j+s`, CA `GLUONIFY_GDOWN_CA_FILE`) | 🟡 | unit tests with a faked driver; the platform does not inject `GLUONIFY_GDOWN_BOLT_URL` yet (Bolt for applications is being built): see [§6](#6-gdown-bolt-with-tls-or-http) |
-| gDown: HTTP API fallback (`POST /db/<base>/query`, basic auth) when no Bolt address is injected | ✅ | what works on the platform today; unit tests with a faked server |
-| gDown: plain `bolt://` | ❌ by design | refused, except off the platform for the development identity (`insecure_dev=True`) |
+| gDown: no SDK client, the official `neo4j` driver used directly over Bolt with TLS (`GLUONIFY_GDOWN_BOLT_URL`, CA `GLUONIFY_GDOWN_CA_FILE`) | ✅ by design | snippet in [§6](#6-how-to-reach-gdown); `neomodel` as an OGM; `?gdown` inferred by Bup from the `neo4j` or `neomodel` distribution |
 | FastAPI: `require_roles`, `current_principal`, `optional_principal`; 401 / 403 / 503 as `{"error": …}` | ✅ | |
 | FastAPI: health `/q/health/live`, `/q/health/ready` (MicroProfile Health body, 503 when DOWN) | ✅ | same addresses as Quarkus applications |
 | FastAPI: app factory (`create_app`: OpenAPI `/q/openapi`, Swagger UI `/q/swagger-ui`, 400 with `violations`) | ✅ | Swagger UI does not follow a light/dark theme (no interface here) |
-| `uses` markers (`[gluonify.uses]` entry points: `gluonify` -> `charm`, `gluonify-gdown` -> `gdown`) | ✅ SDK side | Bup does not read them yet (contract in [§8](#8-the-uses-markers-contract-read-by-bup)) |
+| `uses` inference (`[gluonify.uses]` entry points of `gluonify`/`gluonify-*`: `gluonify` -> `charm`; distributions `neo4j`/`neomodel` -> `gdown`) | ✅ SDK side | Bup does not read them yet (contract in [§8](#8-the-uses-markers-contract-read-by-bup)) |
 | Python ≥ 3.13, typed (`py.typed`, mypy strict), ruff | ✅ | |
-| Publication on PyPI by Trusted Publishing with PEP 740 attestations | 🟡 | workflow ready for the three distributions; nothing published, the three trusted publishers are to be added by the user ([§11](#11-publishing-on-pypi)) |
+| Publication on PyPI by Trusted Publishing with PEP 740 attestations | 🟡 | workflow ready for both distributions; nothing published, the two trusted publishers are to be added by the user ([§11](#11-publishing-on-pypi)) |
 | Clients for Crystallon, Fermion, Photon | ❌ | Java only |
 | End-to-end test on a real cluster | ❌ | phase V3-4 of python.md (an e2e like `e2e-source.sh`) |
 
 ## 2. Quick start
 
 ```bash
-pip install gluonify-fastapi gluonify-gdown   # both pull gluonify
+pip install gluonify-fastapi            # pulls gluonify
 ```
 
 ```python
-from gluonify import Principal
-from gluonify_gdown import GdownClient
-from gluonify_fastapi import create_app, require_roles, serve
 from fastapi import Depends
+from gluonify import Principal
+from gluonify_fastapi import create_app, require_roles, serve
 
 app = create_app("shop", audience="gluonify-shop")
-store = GdownClient.optional()  # None without a dedicated database
-if store:
-    app.state.health.readiness("gdown", store.ready)
 
 
 @app.get("/api/hello")
@@ -96,18 +89,38 @@ if __name__ == "__main__":
 
 Strange reads the Top namespace of the application before the start and writes its keys into the environment. `Top().get("webhook.key")` reads `APP_WEBHOOK_KEY` (`"top": true`, namespace `<uuid>.app`), then `WEBHOOK_KEY` (literal `topNamespace`): the same code works in both cases, as `${app.webhook.key}` in Quarkus. `require`, `secret` (a `Secret` that never prints) and `require_secret` complete it.
 
-## 6. gDown: Bolt with TLS, or HTTP
+## 6. How to reach gDown
 
-Distribution **`gluonify-gdown`** (import `gluonify_gdown`). `GdownClient.from_env()` (or `optional()`) connects to the **dedicated database** of the application (`"gdownDatabase": true`): database `GLUONIFY_GDOWN_DATABASE`, account `APP_GLUONIFY_GDOWN_USER` or `GLUONIFY_GDOWN_USER`, password `APP_GLUONIFY_GDOWN_PASSWORD` or `GLUONIFY_GDOWN_PASSWORD`. The transport follows what the platform injects:
+The SDK has **no gDown client**: use the official **`neo4j`** driver directly (or **`neomodel`**, an OGM on top of it, if you prefer mapped classes). Installing either is enough for Bup to infer `?gdown` ([§8](#8-the-uses-markers-contract-read-by-bup)). With `"gdownDatabase": true` the platform injects everything, and Bolt is **TLS only**:
 
-| Injected | Transport |
+| Variable | Content |
 |---|---|
-| `GLUONIFY_GDOWN_BOLT_URL` (`bolt+s://…` or `neo4j+s://…`) | official `neo4j` driver over Bolt **with TLS**; server certificate verified against `GLUONIFY_GDOWN_CA_FILE` when given (driver `TrustCustomCAs`, same TLS), otherwise against the system CAs |
-| no Bolt URL, `GLUONIFY_SERVICE_GDOWN_URL` | gDown's **HTTP API**: `POST <url>/db/<base>/query` `{"statement", "parameters"}`, basic auth with the dedicated account (as `GraphNoteStore` of gluonify-source); `GLUONIFY_GDOWN_CA_FILE` also trusted for `https` |
 
-A plain `bolt://` or `neo4j://` URL is **refused**; `from_env(insecure_dev=True)` accepts it only off the platform, for the development identity. The Bolt port is never derived from the HTTP address. Both transports are behind the same interface: `query()` (records as dictionaries keyed by the `RETURN` aliases), `write()` (counters `nodes_created`, `nodes_deleted`…), `ready()` (`RETURN 1`), `close()`; `kind` says `bolt` or `http`.
+```python
+import os
 
-**Open points**: Bolt for applications (TLS mandatory, `GLUONIFY_GDOWN_BOLT_URL` and the CA injected for `uses: gdown`) is being built by the platform; until then the URL is absent and the HTTP API is used. `GLUONIFY_GDOWN_CA_FILE` is the **proposed** name of the CA variable (no platform design names it yet): align it with the platform once its design lands.
+import neo4j  # pip install neo4j  (Bup then infers "?gdown")
+
+
+def gdown_driver(dev: bool = False) -> neo4j.Driver:
+    url = os.environ["GLUONIFY_GDOWN_BOLT_URL"]  # bolt+s://… or neo4j+s://…
+    scheme, rest = url.split("://", 1)
+    if not scheme.endswith("+s") and not dev:
+        raise RuntimeError("gDown: TLS required (bolt+s:// or neo4j+s://)")
+    auth = (os.environ["GLUONIFY_GDOWN_USER"], os.environ["GLUONIFY_GDOWN_PASSWORD"])
+    ca = os.environ.get("GLUONIFY_GDOWN_CA_FILE")
+    if ca and scheme.endswith("+s"):  # the driver refuses a custom CA with "+s": same TLS, explicit trust
+        return neo4j.GraphDatabase.driver(
+            f"{scheme[:-2]}://{rest}", auth=auth, encrypted=True, trusted_certificates=neo4j.TrustCustomCAs(ca)
+        )
+    return neo4j.GraphDatabase.driver(url, auth=auth)
+
+
+driver = gdown_driver()
+records, _, _ = driver.execute_query("MATCH (n:Note) RETURN n.title AS title", database_=os.environ["GLUONIFY_GDOWN_DATABASE"])
+```
+
+The driver refuses a custom CA with a `+s` scheme, hence `encrypted=True` with `TrustCustomCAs` on the same host and port: the connection is still TLS, verified against the platform CA. Refuse a plain `bolt://` URL outside local development (the `dev` argument). This is the code of [`gluonify-source-python`](https://github.com/gluonify/gluonify-source-python) (`src/gluonify_source/notes/gdown.py`).
 
 ## 7. FastAPI
 
@@ -130,12 +143,6 @@ Bup infers `uses` for Java from the `META-INF/gluonify/services/<service>` resou
 charm = "gluonify.charm"
 ```
 
-```toml
-# packages/gluonify-gdown/pyproject.toml
-[project.entry-points."gluonify.uses"]
-gdown = "gluonify_gdown"
-```
-
 which each wheel turns into `<name>-<version>.dist-info/entry_points.txt`:
 
 ```ini
@@ -148,9 +155,10 @@ charm = gluonify.charm
 1. After `pip install --require-hashes --no-deps -r <lock export>` into the venv of the build (runtime dependencies only, never the development group), Bup lists `<venv>/lib/python3.13/site-packages/*.dist-info/`. **Nothing is imported or executed**: only two text files are read.
 2. A distribution is **trusted** when the `Name` of its `METADATA`, normalised by PEP 503 (`[-_.]+` -> `-`, lower case), is `gluonify` or starts with `gluonify-` (setting `gluonify.bup.uses.trusted-python`, default `gluonify`; the counterpart of `gluonify.bup.uses.trusted-groups`). Names under that prefix are reserved on PyPI by the organisation, against typosquatting.
 3. In `entry_points.txt`, section `[gluonify.uses]`, each **entry name** is a service (`[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?`); the value (the module that reaches it) is informative, for the journal. An invalid name, `higgs`, or an entry of an untrusted distribution is ignored with a warning.
-4. **Merge**, as for Java: the declared services (request, else `gluonify.json`) as they are, then the inferred ones not declared, as **`?name`** (optional). Result fields `usesInferred`, `usesSources` (`{"charm": ["gluonify"], "gdown": ["gluonify-gdown"]}`), `usesEffective`.
+3 bis. **Known client distributions**: whatever their marker, a distribution whose normalised name is `neo4j` or `neomodel` infers **`gdown`** (`usesSources`: `{"gdown": ["neo4j"]}`). Only its `METADATA` is read; nothing is imported. The list lives in `gluonify.markers.CLIENTS`.
+4. **Merge**, as for Java: the declared services (request, else `gluonify.json`) as they are, then the inferred ones not declared, as **`?name`** (optional). Result fields `usesInferred`, `usesSources` (`{"charm": ["gluonify"], "gdown": ["neo4j"]}`), `usesEffective`.
 
-Which distribution carries which marker: `gluonify` -> `charm` (JWKS); `gluonify-gdown` -> `gdown` (Bolt or HTTP), so only the apps that install it get `?gdown` (least privilege); `gluonify-fastapi` -> none (it reaches services only through `gluonify`); Top has no marker (the agent injects its values, `"top": true` is not a `uses`). `gdownDatabase` is **not** inferred for Python yet: declare `"gdownDatabase": true` in `gluonify.json`.
+What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the distribution `neo4j` or `neomodel` -> `gdown`, so only the apps that really reach gDown get `?gdown`; `gluonify-fastapi` -> none (it reaches services only through `gluonify`); Top has no marker (the agent injects its values, `"top": true` is not a `uses`). `gdownDatabase` is **not** inferred for Python yet: declare `"gdownDatabase": true` in `gluonify.json`.
 
 ## 9. Configuration reference
 
@@ -164,35 +172,30 @@ There is nothing to configure on the platform. Variables read:
 | `GLUONIFY_REPLICA`, `GLUONIFY_SELF_URL`, `GLUONIFY_NODE_ADDRESS` | services | instance information |
 | `GLUONIFY_OIDC_ISSUER`, `GLUONIFY_OIDC_AUDIENCE` | Charm | expected issuer and audience |
 | `APP_<KEY>`, `<KEY>` | Top | configuration and secrets |
-| `GLUONIFY_GDOWN_DATABASE`, `GLUONIFY_GDOWN_USER`, `GLUONIFY_GDOWN_PASSWORD` (`APP_GLUONIFY_GDOWN_USER`, `APP_GLUONIFY_GDOWN_PASSWORD` win) | gluonify-gdown | dedicated database |
-| `GLUONIFY_GDOWN_BOLT_URL` | gluonify-gdown | Bolt address, `bolt+s://` or `neo4j+s://` only; absent: HTTP API |
-| `GLUONIFY_GDOWN_CA_FILE` (proposed name) | gluonify-gdown | PEM of the CA to trust for gDown (Bolt and https) |
-| `GLUONIFY_SERVICE_GDOWN_URL` | gluonify-gdown | gDown's HTTP API (fallback when no Bolt URL) |
 | `PORT` | `serve` | listening port (default 8080), host always `0.0.0.0` |
 
 ## 10. Development
 
-**Why uv** (and not hatch): uv gives a **workspace** (three distributions, one lock file, editable installs of each other) and a **universal lock file with hashes** (`uv.lock`), and `uv export --format requirements-txt` produces the `--require-hashes` file that Bup installs with plain pip (python.md § 3 bis.3). Hatch has no cross-project lock. The build backend stays **hatchling** (standard PEP 517, what PyPI and pip see), so uv is only a development tool.
+**Why uv** (and not hatch): uv gives a **workspace** (two distributions, one lock file, editable installs of each other) and a **universal lock file with hashes** (`uv.lock`), and `uv export --format requirements-txt` produces the `--require-hashes` file that Bup installs with plain pip (python.md § 3 bis.3). Hatch has no cross-project lock. The build backend stays **hatchling** (standard PEP 517, what PyPI and pip see), so uv is only a development tool.
 
 ```bash
-uv sync                    # Python 3.13 (.python-version), the three distributions in editable mode, dev group
-uv run pytest --cov        # 115 tests, coverage >= 90 % required (99 % today)
+uv sync                    # Python 3.13 (.python-version), both distributions in editable mode, dev group
+uv run pytest --cov        # 90 tests, coverage >= 90 % required (99 % today)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                # strict
-uv build --all-packages    # dist/gluonify-*.whl, dist/gluonify_fastapi-*.whl, dist/gluonify_gdown-*.whl
+uv build --all-packages    # dist/gluonify-*.whl, dist/gluonify_fastapi-*.whl
 ```
 
-Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, `markers.py`), `packages/gluonify-gdown/src/gluonify_gdown/` (`client.py`), `packages/gluonify-fastapi/src/gluonify_fastapi/` (`auth.py`, `health.py`, `app.py`), `tests/` (Charm faked by a P-256 key pair and its JWKS, the `neo4j` driver and gDown's HTTP API faked). CI: `.github/workflows/ci.yml` on every push.
+Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, `markers.py`), `packages/gluonify-fastapi/src/gluonify_fastapi/` (`auth.py`, `health.py`, `app.py`), `tests/` (Charm faked by a P-256 key pair and its JWKS). CI: `.github/workflows/ci.yml` on every push.
 
 ## 11. Publishing on PyPI
 
-`.github/workflows/publish.yml` publishes the **three** distributions by **Trusted Publishing** (OIDC of GitHub Actions, no token stored) with **PEP 740 attestations**, only on a tag `vX.Y.Z` whose value equals the three versions, after the tests, in the GitHub environment **`pypi`**, which must require a manual approval. To do once, by the user:
+`.github/workflows/publish.yml` publishes **both** distributions by **Trusted Publishing** (OIDC of GitHub Actions, no token stored) with **PEP 740 attestations**, only on a tag `vX.Y.Z` whose value equals both versions, after the tests, in the GitHub environment **`pypi`**, which must require a manual approval. To do once, by the user:
 
 1. **GitHub**, repository `gluonify/gluonify-plasma-python` -> Settings -> Environments -> New environment `pypi` -> *Required reviewers*: yourself; *Deployment branches and tags*: tags `v*` only.
-2. **PyPI**, account of the `gluonify` organisation -> *Your projects* -> *Publishing* -> *Add a new pending publisher* (the projects do not exist yet), **three times**:
+2. **PyPI**, account of the `gluonify` organisation -> *Your projects* -> *Publishing* -> *Add a new pending publisher* (the projects do not exist yet), **twice**:
    - PyPI project name `gluonify`, owner `gluonify`, repository `gluonify-plasma-python`, workflow `publish.yml`, environment `pypi`;
-   - PyPI project name `gluonify-fastapi`, same owner, repository, workflow and environment;
-   - PyPI project name `gluonify-gdown`, same owner, repository, workflow and environment.
-3. Reserve the derived names against typosquatting (python.md question 5), for example `gluonify-charm`, `gluonify-top`, `gluonify-sdk`, `gluonify-flask`, as pending publishers too, or as empty placeholder releases.
-4. Release: set the same version in the three `pyproject.toml` (and `gluonify==` in `gluonify-fastapi` and `gluonify-gdown`), commit, `git tag v0.1.0 && git push origin v0.1.0`, then approve the `pypi` deployment in the Actions tab.
+   - PyPI project name `gluonify-fastapi`, same owner, repository, workflow and environment.
+3. Reserve the derived names against typosquatting (python.md question 5), for example `gluonify-gdown`, `gluonify-charm`, `gluonify-top`, `gluonify-sdk`, `gluonify-flask`, as pending publishers too, or as empty placeholder releases.
+4. Release: set the same version in both `pyproject.toml` (and `gluonify==` in `gluonify-fastapi`), commit, `git tag v0.1.0 && git push origin v0.1.0`, then approve the `pypi` deployment in the Actions tab.
 5. Check: `pip download gluonify==0.1.0` and the "Provenance" of the files on PyPI.

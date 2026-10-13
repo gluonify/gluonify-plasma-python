@@ -22,8 +22,6 @@ def write_dist(site: Path, name: str, entry_points: str | None, folder: str | No
 def test_each_distribution_declares_the_services_it_reaches() -> None:
     data = tomllib.loads((ROOT / "packages/gluonify/pyproject.toml").read_text())
     assert data["project"]["entry-points"]["gluonify.uses"] == {"charm": "gluonify.charm"}
-    gdown = tomllib.loads((ROOT / "packages/gluonify-gdown/pyproject.toml").read_text())
-    assert gdown["project"]["entry-points"]["gluonify.uses"] == {"gdown": "gluonify_gdown"}
     fastapi = tomllib.loads((ROOT / "packages/gluonify-fastapi/pyproject.toml").read_text())
     assert "gluonify.uses" not in fastapi["project"].get("entry-points", {})
 
@@ -31,8 +29,7 @@ def test_each_distribution_declares_the_services_it_reaches() -> None:
 def test_installed_metadata_carries_the_markers() -> None:
     eps = {(ep.name, ep.value, ep.dist.name if ep.dist else None) for ep in metadata.entry_points(group="gluonify.uses")}
     assert ("charm", "gluonify.charm", "gluonify") in eps
-    assert ("gdown", "gluonify_gdown", "gluonify-gdown") in eps
-    assert ("gdown", "gluonify.gdown", "gluonify") not in eps
+    assert not any(name == "gdown" for name, _, _ in eps)
 
 
 def test_infer_reads_trusted_distributions_only(tmp_path: Path) -> None:
@@ -58,6 +55,18 @@ def test_infer_reads_trusted_distributions_only(tmp_path: Path) -> None:
     assert ("gluonify-broken", "", "unreadable entry_points.txt") in reasons
 
 
+def test_neo4j_and_neomodel_infer_gdown(tmp_path: Path) -> None:
+    write_dist(tmp_path, "neo4j", None)
+    write_dist(tmp_path, "Neo4j", None, "neo4j_dup")
+    write_dist(tmp_path, "neomodel", "[console_scripts]\nneomodel_install_labels = x:y\n")
+    write_dist(tmp_path, "neo4j-rust-ext", None)  # not the driver itself: no inference
+    r = markers.infer(tmp_path)
+    assert r.services == ("gdown",)
+    assert r.sources == {"gdown": ("neo4j", "neomodel")}
+    assert r.uses(["charm"]) == ["charm", "?gdown"]
+    assert markers.CLIENTS == {"neo4j": "gdown", "neomodel": "gdown"}
+
+
 def test_merge_like_bup() -> None:
     r = markers.Inference(("charm", "gdown"), {}, ())
     assert r.uses(["charm", "photon"]) == ["charm", "photon", "?gdown"]
@@ -80,6 +89,6 @@ def test_the_venv_of_the_workspace() -> None:
     # editable installs keep the dist-info in site-packages of the venv
     venv_site = next(p for p in (ROOT / ".venv/lib").glob("python3.*/site-packages"))
     r = markers.infer(venv_site)
-    assert {"charm", "gdown"} <= set(r.services)
-    assert r.sources == {"charm": ("gluonify",), "gdown": ("gluonify-gdown",)}
+    assert r.services == ("charm",)
+    assert r.sources == {"charm": ("gluonify",)}  # neo4j is not a dependency of the SDK
     assert site.exists()

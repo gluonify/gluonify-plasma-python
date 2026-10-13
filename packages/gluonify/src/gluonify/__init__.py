@@ -1,4 +1,4 @@
-"""The Gluonify Python SDK: platform services with no configuration (discovery, Charm, Top). gDown: ``gluonify_gdown``."""
+"""The Gluonify Python SDK: platform services with no configuration (discovery, Charm, Top)."""
 
 from .charm import CharmVerifier, InvalidTokenError, Principal
 from .services import (

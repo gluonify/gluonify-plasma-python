@@ -4,7 +4,9 @@ Bup never imports anything: it reads, in the ``site-packages`` folder of the ven
 --require-hashes`` of the lock file, without the development dependencies), every ``*.dist-info`` folder whose
 distribution is trusted (``Name`` of ``METADATA`` = ``gluonify`` or ``gluonify-*`` after PEP 503 normalisation), and in
 its ``entry_points.txt`` the section ``[gluonify.uses]``: each entry name is a service. Invalid names and ``higgs`` are
-ignored. The services found are added to the declared ``uses`` as ``?name`` (optional).
+ignored. In addition, **any** installed distribution whose normalised name is a known client of a platform service
+infers that service (:data:`CLIENTS`: ``neo4j`` or ``neomodel`` -> ``gdown``). The services found are added to the
+declared ``uses`` as ``?name`` (optional).
 """
 
 from __future__ import annotations
@@ -14,11 +16,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["GROUP", "Inference", "infer", "is_trusted", "normalize"]
+__all__ = ["CLIENTS", "GROUP", "Inference", "infer", "is_trusted", "normalize"]
 
 GROUP = "gluonify.uses"
 _SERVICE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _REFUSED = frozenset({"higgs"})
+
+CLIENTS: dict[str, str] = {"neo4j": "gdown", "neomodel": "gdown"}
+"""Third-party distributions (PEP 503 names) that reach a platform service: their presence infers it."""
 
 
 def normalize(name: str) -> str:
@@ -68,6 +73,9 @@ def infer(site_packages: Path, trusted: tuple[str, ...] = ("gluonify",)) -> Infe
         name = _name(d)
         if name is None:
             continue
+        client = CLIENTS.get(normalize(name))
+        if client is not None:
+            sources.setdefault(client, set()).add(normalize(name))
         ep = d / "entry_points.txt"
         if not ep.is_file():
             continue

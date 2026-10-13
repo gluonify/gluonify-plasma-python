@@ -4,7 +4,7 @@ name = "gluonify-plasma-python"
 version = "0.1.0"
 description = "Workspace of the Gluonify Python SDK (not published)"
 requires-python = ">=3.13"
-dependencies = ["gluonify", "gluonify-fastapi", "gluonify-gdown"]
+dependencies = ["gluonify", "gluonify-fastapi"]
 
 [tool.uv]
 package = false
@@ -12,7 +12,6 @@ package = false
 [tool.uv.sources]
 gluonify = { workspace = true }
 gluonify-fastapi = { workspace = true }
-gluonify-gdown = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*"]
@@ -32,7 +31,7 @@ addopts = "-q --strict-markers"
 filterwarnings = ["error", "ignore:Using `httpx` with `starlette.testclient`"]
 
 [tool.coverage.run]
-source = ["gluonify", "gluonify_fastapi", "gluonify_gdown"]
+source = ["gluonify", "gluonify_fastapi"]
 branch = true
 
 [tool.coverage.report]
@@ -48,7 +47,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "RUF", "SIM", "PT"]
 ignore = ["S101"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["gluonify", "gluonify_fastapi", "gluonify_gdown"]
+known-first-party = ["gluonify", "gluonify_fastapi"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S108"]
@@ -56,4 +55,4 @@ known-first-party = ["gluonify", "gluonify_fastapi", "gluonify_gdown"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-packages = ["gluonify", "gluonify_fastapi", "gluonify_gdown"]
+packages = ["gluonify", "gluonify_fastapi"]
