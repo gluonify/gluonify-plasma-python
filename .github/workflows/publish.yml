@@ -1,0 +1,61 @@
+# Publication on PyPI by Trusted Publishing (OIDC): no token is stored anywhere.
+# Triggered only by a release tag vX.Y.Z; the job waits for a manual approval of the "pypi" environment.
+# PyPI side (once per project, see README "Publishing"): trusted publisher owner=gluonify, repository=gluonify-plasma-python,
+# workflow=publish.yml, environment=pypi, for BOTH projects "gluonify" and "gluonify-fastapi".
+name: publish
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Tests before publishing
+        run: |
+          uv sync --locked
+          uv run ruff check .
+          uv run mypy
+          uv run pytest
+      - name: The tag matches both versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for p in packages/gluonify packages/gluonify-fastapi; do
+            v=$(python3 -c "import tomllib,sys;print(tomllib.load(open('$p/pyproject.toml','rb'))['project']['version'])")
+            test "$v" = "$tag" || { echo "$p is $v, tag is $tag"; exit 1; }
+          done
+      - name: Build
+        run: uv build --all-packages -o dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/gluonify/
+    permissions:
+      id-token: write   # OIDC token for Trusted Publishing; also used to sign the PEP 740 attestations
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish gluonify and gluonify-fastapi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          attestations: true
