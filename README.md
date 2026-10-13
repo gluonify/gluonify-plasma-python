@@ -98,6 +98,10 @@ The SDK has **no gDown client**: use the official **`neo4j`** driver directly (o
 
 | Variable | Content |
 |---|---|
+| `GLUONIFY_GDOWN_BOLT_URL` | `bolt+s://<node>:7687`: Bolt with TLS, internal network only |
+| `GLUONIFY_GDOWN_CA_FILE` | path of the platform's internal CA (PEM) that signs gDown's certificate |
+| `GLUONIFY_GDOWN_DATABASE` | the application's dedicated database |
+| `GLUONIFY_GDOWN_USER`, `GLUONIFY_GDOWN_PASSWORD` | its account, limited to that database |
 
 ```python
 import os
