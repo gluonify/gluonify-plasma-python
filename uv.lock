@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "gluonify",
     "gluonify-fastapi",
+    "gluonify-gdown",
     "gluonify-plasma-python",
 ]
 
@@ -377,15 +378,11 @@ name = "gluonify"
 version = "0.1.0"
 source = { editable = "packages/gluonify" }
 dependencies = [
-    { name = "neo4j" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "neo4j", specifier = ">=5.28" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10" },
-]
+requires-dist = [{ name = "pyjwt", extras = ["crypto"], specifier = ">=2.10" }]
 
 [[package]]
 name = "gluonify-fastapi"
@@ -405,12 +402,28 @@ requires-dist = [
 ]
 
 [[package]]
+name = "gluonify-gdown"
+version = "0.1.0"
+source = { editable = "packages/gluonify-gdown" }
+dependencies = [
+    { name = "gluonify" },
+    { name = "neo4j" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gluonify", editable = "packages/gluonify" },
+    { name = "neo4j", specifier = ">=5.28" },
+]
+
+[[package]]
 name = "gluonify-plasma-python"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "gluonify" },
     { name = "gluonify-fastapi" },
+    { name = "gluonify-gdown" },
 ]
 
 [package.dev-dependencies]
@@ -426,6 +439,7 @@ dev = [
 requires-dist = [
     { name = "gluonify", editable = "packages/gluonify" },
     { name = "gluonify-fastapi", editable = "packages/gluonify-fastapi" },
+    { name = "gluonify-gdown", editable = "packages/gluonify-gdown" },
 ]
 
 [package.metadata.requires-dev]

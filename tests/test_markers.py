@@ -19,9 +19,11 @@ def write_dist(site: Path, name: str, entry_points: str | None, folder: str | No
         (d / "entry_points.txt").write_text(entry_points)
 
 
-def test_the_gluonify_distribution_declares_charm_and_gdown() -> None:
+def test_each_distribution_declares_the_services_it_reaches() -> None:
     data = tomllib.loads((ROOT / "packages/gluonify/pyproject.toml").read_text())
-    assert data["project"]["entry-points"]["gluonify.uses"] == {"charm": "gluonify.charm", "gdown": "gluonify.gdown"}
+    assert data["project"]["entry-points"]["gluonify.uses"] == {"charm": "gluonify.charm"}
+    gdown = tomllib.loads((ROOT / "packages/gluonify-gdown/pyproject.toml").read_text())
+    assert gdown["project"]["entry-points"]["gluonify.uses"] == {"gdown": "gluonify_gdown"}
     fastapi = tomllib.loads((ROOT / "packages/gluonify-fastapi/pyproject.toml").read_text())
     assert "gluonify.uses" not in fastapi["project"].get("entry-points", {})
 
@@ -29,7 +31,8 @@ def test_the_gluonify_distribution_declares_charm_and_gdown() -> None:
 def test_installed_metadata_carries_the_markers() -> None:
     eps = {(ep.name, ep.value, ep.dist.name if ep.dist else None) for ep in metadata.entry_points(group="gluonify.uses")}
     assert ("charm", "gluonify.charm", "gluonify") in eps
-    assert ("gdown", "gluonify.gdown", "gluonify") in eps
+    assert ("gdown", "gluonify_gdown", "gluonify-gdown") in eps
+    assert ("gdown", "gluonify.gdown", "gluonify") not in eps
 
 
 def test_infer_reads_trusted_distributions_only(tmp_path: Path) -> None:
@@ -78,5 +81,5 @@ def test_the_venv_of_the_workspace() -> None:
     venv_site = next(p for p in (ROOT / ".venv/lib").glob("python3.*/site-packages"))
     r = markers.infer(venv_site)
     assert {"charm", "gdown"} <= set(r.services)
-    assert r.sources["charm"] == ("gluonify",)
+    assert r.sources == {"charm": ("gluonify",), "gdown": ("gluonify-gdown",)}
     assert site.exists()

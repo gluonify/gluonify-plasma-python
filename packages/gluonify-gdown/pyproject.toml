@@ -1,0 +1,33 @@
+[project]
+name = "gluonify-gdown"
+version = "0.1.0"
+description = "gDown client of the Gluonify SDK: dedicated database over Bolt with TLS (official neo4j driver), HTTP fallback"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+authors = [{ name = "Gluonify" }]
+keywords = ["gluonify", "gdown", "neo4j", "bolt", "cypher"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "gluonify==0.1.0",
+    "neo4j>=5.28",
+]
+
+[project.urls]
+Homepage = "https://gluonify.io"
+Source = "https://github.com/gluonify/gluonify-plasma-python"
+
+# The "uses" marker read by Bup (README "The uses markers"): installing this distribution grants ?gdown.
+[project.entry-points."gluonify.uses"]
+gdown = "gluonify_gdown"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gluonify_gdown"]

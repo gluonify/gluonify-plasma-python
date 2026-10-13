@@ -1,7 +1,6 @@
-"""The Gluonify Python SDK: platform services with no configuration (discovery, Charm, Top, gDown)."""
+"""The Gluonify Python SDK: platform services with no configuration (discovery, Charm, Top). gDown: ``gluonify_gdown``."""
 
 from .charm import CharmVerifier, InvalidTokenError, Principal
-from .gdown import GdownClient, GdownDatabase, bolt_url, dedicated_database
 from .services import (
     Endpoint,
     GluonifyServices,
@@ -21,8 +20,6 @@ __version__ = "0.1.0"
 __all__ = [
     "CharmVerifier",
     "Endpoint",
-    "GdownClient",
-    "GdownDatabase",
     "GluonifyServices",
     "GluonifyServicesError",
     "InvalidTokenError",
@@ -32,8 +29,6 @@ __all__ = [
     "Top",
     "TopKeyMissingError",
     "__version__",
-    "bolt_url",
-    "dedicated_database",
     "defaults",
     "endpoint",
     "optional",
