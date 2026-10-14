@@ -6,5 +6,5 @@
 4. **`gdownDatabase` inferred** for Python (Java infers it from configuration references): a second entry point group, or a key in `[tool.gluonify]`.
 5. **Developer machine mode** (`~/.gluonify/config.json`, discovery document, developer token refresh), as `DeveloperConfig`/`DeveloperTokens` in Java.
 6. **Clients** for Crystallon (rendering), Fermion and Photon (signature check of webhooks), each with its marker.
-7. **e2e** on a real cluster with gluonify-source-python (V3-4, calqued on `e2e-source.sh`).
+7. ~~e2e on a real cluster~~ done 2026-10-14: `gluonify-chamber/scripts/e2e-source-python.sh` 29/29 (arm64), SDK installed from this checkout (wheel built from git HEAD) until it is on PyPI.
 8. Pin the GitHub Actions by commit SHA.

@@ -49,7 +49,7 @@ The starter application that uses it is [`gluonify-source-python`](https://githu
 | Python ≥ 3.13, typed (`py.typed`, mypy strict), ruff | ✅ | |
 | Publication on PyPI by Trusted Publishing with PEP 740 attestations | 🟡 | workflow ready for `gluonify`; nothing published, the trusted publisher is to be added by the user ([§11](#11-publishing-on-pypi)) |
 | Clients for Crystallon, Fermion, Photon | ❌ | Java only |
-| End-to-end test on a real cluster | ❌ | phase V3-4 of python.md (an e2e like `e2e-source.sh`) |
+| End-to-end test on a real cluster | ✅ | phase V3-4 of python.md: `gluonify-chamber/scripts/e2e-source-python.sh` with gluonify-source-python, 29/29 on 2026-10-14 (arm64): Charm tokens, Top (`APP_GREETING`), gDown over Bolt+TLS, `uses` inferred by Bup, sleep and wake; the SDK wheel is built from this checkout until it is on PyPI |
 
 ## 2. Quick start
 
