@@ -178,9 +178,36 @@ def test_health(charm: FakeCharm) -> None:
 def test_openapi_and_swagger_paths(charm: FakeCharm) -> None:
     c = TestClient(build(charm))
     assert c.get("/q/health/ready").status_code == 404  # /q/ is the Quarkus namespace
-    assert c.get("/q/openapi").json()["info"]["title"] == "test"
-    assert c.get("/q/swagger-ui").status_code == 200
-    assert c.get("/redoc").status_code == 404
+    assert c.get("/openapi.json").json()["info"]["title"] == "test"
+    docs = c.get("/docs")
+    assert docs.status_code == 200
+    assert "/openapi.json" in docs.text
+    assert "read-only" not in docs.text  # off the platform: interactive
+    for old in ("/q/openapi", "/q/swagger-ui", "/redoc"):
+        assert c.get(old).status_code == 404
+    assert "/docs" not in c.get("/openapi.json").json()["paths"]
+
+
+def test_swagger_is_read_only_on_the_platform() -> None:
+    app = create_app("x", audience="a", services=GluonifyServices({"GLUONIFY_ENVIRONMENT": "DEV"}))
+    c = TestClient(app)
+    page = c.get("/docs")
+    assert page.status_code == 200
+    assert "Swagger UI is read-only in production" in page.text
+    assert page.text.index("swagger-ui-bundle.js") < page.text.index("requestInterceptor")
+    assert ".authorization__btn,.try-out,.btn.execute" in page.text
+    assert c.get("/docs/oauth2-redirect").status_code == 404
+    assert c.get("/openapi.json").json()["info"]["title"] == "x"
+    assert "/docs" not in c.get("/openapi.json").json()["paths"]
+
+
+def test_swagger_read_only_can_be_forced_and_paths_overridden() -> None:
+    app = create_app("x", audience="a", swagger_read_only=True, docs_url="/api/docs", openapi_url="/api/openapi.json")
+    c = TestClient(app)
+    assert "read-only in production" in c.get("/api/docs").text
+    assert "/api/openapi.json" in c.get("/api/docs").text
+    assert c.get("/docs").status_code == 404
+    assert TestClient(create_app("x", audience="a", docs_url=None)).get("/docs").status_code == 404
     assert c.get("/nothing").json() == {"error": "Not Found"}
 
 

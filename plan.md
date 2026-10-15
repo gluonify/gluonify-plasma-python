@@ -9,3 +9,4 @@
 7. ~~e2e on a real cluster~~ done 2026-10-14: `gluonify-chamber/scripts/e2e-source-python.sh` 29/29 (arm64), SDK installed from this checkout (wheel built from git HEAD) until it is on PyPI.
 8. Pin the GitHub Actions by commit SHA.
 9. ~~Health at `/health/live` and `/health/ready`~~ done 2026-10-15: `/q/` is the Quarkus namespace (no alias, pre-release); Bup sends both paths, Higgs blocks `/health/` in PRD.
+10. ~~OpenAPI at `/openapi.json`, Swagger UI at `/docs`~~ done 2026-10-15: no `/q/` alias; Swagger UI read-only on the platform (same interceptor as Quarkus `%prod`); Higgs blocks both paths of Python apps in PRD. Left: Strange still fetches `/q/openapi` for the console's contract view (Python apps need `/openapi.json`).

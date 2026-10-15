@@ -7,7 +7,8 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException
 
 from gluonify import CharmVerifier, GluonifyServices, Principal, Top, defaults
@@ -15,10 +16,36 @@ from gluonify import CharmVerifier, GluonifyServices, Principal, Top, defaults
 from .auth import GluonifyAuth
 from .health import Health
 
-__all__ = ["DEFAULT_PORT", "PORT_ENV", "create_app", "serve"]
+__all__ = ["DEFAULT_PORT", "DOCS_URL", "OPENAPI_URL", "PORT_ENV", "READ_ONLY_MESSAGE", "create_app", "serve"]
 
 PORT_ENV = "PORT"
 DEFAULT_PORT = 8080
+OPENAPI_URL = "/openapi.json"
+DOCS_URL = "/docs"
+READ_ONLY_MESSAGE = "Swagger UI is read-only in production"
+
+# Same rule as the Quarkus services in production (quarkus.swagger-ui.request-interceptor and on-complete): every request but
+# the contract is refused, and the Authorize and Try it out controls are hidden.
+_READ_ONLY_SCRIPT = (
+    "<script>(function(){var o=window.SwaggerUIBundle;var w=function(c){"
+    "c.requestInterceptor=function(req){if(req.loadSpec){return req;}throw new Error('" + READ_ONLY_MESSAGE + "');};"
+    "c.tryItOutEnabled=false;c.persistAuthorization=false;c.onComplete=function(){var s=document.createElement('style');"
+    "s.textContent='.auth-wrapper,.authorization__btn,.try-out,.btn.execute{display:none !important}';"
+    "document.head.appendChild(s);};return o(c);};Object.assign(w,o);window.SwaggerUIBundle=w;})();</script>"
+)
+
+
+def _read_only_docs(app: FastAPI, docs_url: str, openapi_url: str) -> None:
+    """Swagger UI at ``docs_url``, read-only: the page of FastAPI with the interceptor added after the bundle."""
+
+    @app.get(docs_url, include_in_schema=False)
+    async def docs() -> HTMLResponse:
+        page = get_swagger_ui_html(openapi_url=openapi_url, title=f"{app.title} - Swagger UI", oauth2_redirect_url=None)
+        html = bytes(page.body).decode()
+        marker = 'swagger-ui-bundle.js"></script>'
+        if marker not in html:  # pragma: no cover - a FastAPI that changed its page: refuse rather than serve it writable
+            raise RuntimeError("cannot make Swagger UI read-only: unexpected FastAPI page")
+        return HTMLResponse(html.replace(marker, marker + _READ_ONLY_SCRIPT, 1))
 
 
 def create_app(
@@ -30,6 +57,7 @@ def create_app(
     services: GluonifyServices | None = None,
     auth: GluonifyAuth | None = None,
     dev_identity: Principal | None = None,
+    swagger_read_only: bool | None = None,
     **fastapi_kwargs: Any,
 ) -> FastAPI:
     """A FastAPI application for Gluonify.
@@ -37,21 +65,31 @@ def create_app(
     * ``app.state.gluonify``: the :class:`gluonify.GluonifyServices` of the application; ``app.state.top``: its
       :class:`gluonify.Top`; ``app.state.health``: its :class:`Health` (add readiness checks to it);
       ``app.state.gluonify_auth``: its :class:`GluonifyAuth` (Charm, built on first use);
-    * health at ``/health/live`` and ``/health/ready``, OpenAPI at ``/q/openapi``, Swagger UI at ``/q/swagger-ui``;
+    * health at ``/health/live`` and ``/health/ready``, OpenAPI at ``/openapi.json``, Swagger UI at ``/docs`` (FastAPI's
+      conventional paths; ``/q/`` belongs to Quarkus), no ReDoc; Swagger UI is read-only on the platform (no Authorize, no
+      Try it out, every request but the contract refused), like the Quarkus services in production;
     * errors as ``{"error": "..."}``; an invalid body is a 400 with the list of ``violations``.
 
     :param audience: the audience expected in Charm tokens when the platform does not inject ``GLUONIFY_OIDC_AUDIENCE``
     :param dev_identity: an identity for requests without a token, local development only (refused on the platform)
+    :param swagger_read_only: read-only Swagger UI; ``None`` (default): on the platform only
     """
     s = services or defaults()
     if dev_identity is not None and s.on_platform:
         raise RuntimeError("a development identity is refused on the platform (GLUONIFY_ENVIRONMENT is set)")
     if auth is None:
         auth = GluonifyAuth(lambda: CharmVerifier.from_env(s, audience=audience), dev_identity=dev_identity)
-    fastapi_kwargs.setdefault("docs_url", "/q/swagger-ui")
-    fastapi_kwargs.setdefault("openapi_url", "/q/openapi")
+    fastapi_kwargs.setdefault("openapi_url", OPENAPI_URL)
     fastapi_kwargs.setdefault("redoc_url", None)
+    docs_url = fastapi_kwargs.pop("docs_url", DOCS_URL)
+    read_only = s.on_platform if swagger_read_only is None else swagger_read_only
+    openapi_url = fastapi_kwargs["openapi_url"]
+    fastapi_kwargs["docs_url"] = None if read_only else docs_url
+    if read_only:
+        fastapi_kwargs["swagger_ui_oauth2_redirect_url"] = None
     app = FastAPI(title=title, version=version, description=description or "", **fastapi_kwargs)
+    if read_only and docs_url and openapi_url:
+        _read_only_docs(app, docs_url, openapi_url)
     health = Health()
     app.state.gluonify = s
     app.state.top = Top(s.environ)
