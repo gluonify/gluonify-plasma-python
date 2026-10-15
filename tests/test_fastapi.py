@@ -153,30 +153,31 @@ def test_validation_errors_are_400(charm: FakeCharm) -> None:
 def test_health(charm: FakeCharm) -> None:
     app = build(charm)
     c = TestClient(app)
-    assert c.get("/q/health/live").json() == {"status": "UP", "checks": []}
+    assert c.get("/health/live").json() == {"status": "UP", "checks": []}
     state = {"ok": True}
     app.state.health.readiness("store", lambda: (state["ok"], {"store": "memory"}))
     app.state.health.liveness("alive", lambda: True)
-    r = c.get("/q/health/ready")
+    r = c.get("/health/ready")
     assert r.status_code == 200
     assert r.json() == {"status": "UP", "checks": [{"name": "store", "status": "UP", "data": {"store": "memory"}}]}
     state["ok"] = False
-    r = c.get("/q/health/ready")
+    r = c.get("/health/ready")
     assert r.status_code == 503
     assert r.json()["status"] == "DOWN"
-    assert c.get("/q/health/live").status_code == 200
+    assert c.get("/health/live").status_code == 200
 
     def boom() -> bool:
         raise ValueError("x")
 
     app.state.health.readiness("boom", boom)
-    r = c.get("/q/health")
+    r = c.get("/health")
     assert r.status_code == 503
     assert {"name": "boom", "status": "DOWN", "data": {"error": "ValueError"}} in r.json()["checks"]
 
 
 def test_openapi_and_swagger_paths(charm: FakeCharm) -> None:
     c = TestClient(build(charm))
+    assert c.get("/q/health/ready").status_code == 404  # /q/ is the Quarkus namespace
     assert c.get("/q/openapi").json()["info"]["title"] == "test"
     assert c.get("/q/swagger-ui").status_code == 200
     assert c.get("/redoc").status_code == 404

@@ -8,3 +8,4 @@
 6. **Clients** for Crystallon (rendering), Fermion and Photon (signature check of webhooks), each with its marker.
 7. ~~e2e on a real cluster~~ done 2026-10-14: `gluonify-chamber/scripts/e2e-source-python.sh` 29/29 (arm64), SDK installed from this checkout (wheel built from git HEAD) until it is on PyPI.
 8. Pin the GitHub Actions by commit SHA.
+9. ~~Health at `/health/live` and `/health/ready`~~ done 2026-10-15: `/q/` is the Quarkus namespace (no alias, pre-release); Bup sends both paths, Higgs blocks `/health/` in PRD.

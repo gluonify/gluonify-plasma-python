@@ -1,4 +1,4 @@
-"""Health endpoints, at the same addresses as a Quarkus application: ``/q/health/live`` and ``/q/health/ready``.
+"""Health endpoints: ``/health/live`` and ``/health/ready`` (``/q/`` is the Quarkus namespace; Bup sends both to the platform).
 
 The platform sends traffic only to an instance whose readiness answers 200. Liveness must not depend on anything
 external (a gDown outage must not make the application restart in a loop). The body follows MicroProfile Health:
@@ -65,7 +65,7 @@ class Health:
         return self._run(self._ready)
 
     def router(self) -> APIRouter:
-        r = APIRouter(prefix="/q/health", tags=["Health"])
+        r = APIRouter(prefix="/health", tags=["Health"])
 
         async def respond(fn: Callable[[], tuple[int, dict[str, Any]]]) -> JSONResponse:
             code, body = await run_in_threadpool(fn)

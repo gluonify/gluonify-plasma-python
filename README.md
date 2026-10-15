@@ -42,7 +42,7 @@ The starter application that uses it is [`gluonify-source-python`](https://githu
 | Top: reading the vault at run time (HTTP API) | ❌ | not needed by applications; values change at the next start |
 | gDown: no SDK client, the official `neo4j` driver used directly over Bolt with TLS (`GLUONIFY_GDOWN_BOLT_URL`, CA `GLUONIFY_GDOWN_CA_FILE`) | ✅ by design | snippet in [§6](#6-how-to-reach-gdown); `neomodel` as an OGM; `?gdown` inferred by Bup from the `neo4j` or `neomodel` distribution |
 | FastAPI: `require_roles`, `current_principal`, `optional_principal`; 401 / 403 / 503 as `{"error": …}` | ✅ | |
-| FastAPI: health `/q/health/live`, `/q/health/ready` (MicroProfile Health body, 503 when DOWN) | ✅ | same addresses as Quarkus applications |
+| FastAPI: health `/health/live`, `/health/ready` (MicroProfile Health body, 503 when DOWN) | ✅ | not under `/q/` (the Quarkus namespace); Bup sends both paths to the platform, blocked at the ingress in PRD |
 | FastAPI: app factory (`create_app`: OpenAPI `/q/openapi`, Swagger UI `/q/swagger-ui`, 400 with `violations`) | ✅ | Swagger UI does not follow a light/dark theme (no interface here) |
 | `uses` inference (`[gluonify.uses]` entry points of `gluonify`/`gluonify-*`: `gluonify` -> `charm`; distributions `neo4j`/`neomodel` -> `gdown`) | ✅ SDK side | Bup does not read them yet (contract in [§8](#8-the-uses-markers-contract-read-by-bup)) |
 | FastAPI as the extra `gluonify[fastapi]` of the one distribution (`gluonify.fastapi`; clear `ImportError` without the extra) | ✅ | the former `gluonify-fastapi` distribution is gone (never published); the name stays reserved |
@@ -137,7 +137,7 @@ The driver refuses a custom CA with a `+s` scheme, hence `encrypted=True` with `
 
 - `app.state.gluonify` (`GluonifyServices`), `app.state.top` (`Top`), `app.state.health` (`Health`), `app.state.gluonify_auth` (`GluonifyAuth`, the Charm verifier being built on the **first** authenticated request, so the app starts even if Charm is not ready);
 - dependencies `require_roles("a", "b")` (403 `missing role: …`), `current_principal` (401 with `WWW-Authenticate: Bearer`), `optional_principal`; 503 when Charm is not granted;
-- health `/q/health`, `/q/health/live`, `/q/health/ready`: `app.state.health.readiness("store", check)`, a check returning `bool` or `(bool, data)`;
+- health `/health`, `/health/live`, `/health/ready`: `app.state.health.readiness("store", check)`, a check returning `bool` or `(bool, data)`;
 - OpenAPI `/q/openapi`, Swagger UI `/q/swagger-ui`; errors `{"error": "…"}`; an invalid body is a 400 `{"error": "invalid body", "violations": [{"field", "message"}]}`.
 
 `dev_identity` gives an identity to requests **without** a token, for local development only: `create_app` refuses it when `GLUONIFY_ENVIRONMENT` is set. `serve(app)` runs uvicorn on `0.0.0.0:$PORT` (8080 by default), one process.

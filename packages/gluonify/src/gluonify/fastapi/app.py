@@ -37,7 +37,7 @@ def create_app(
     * ``app.state.gluonify``: the :class:`gluonify.GluonifyServices` of the application; ``app.state.top``: its
       :class:`gluonify.Top`; ``app.state.health``: its :class:`Health` (add readiness checks to it);
       ``app.state.gluonify_auth``: its :class:`GluonifyAuth` (Charm, built on first use);
-    * health at ``/q/health/live`` and ``/q/health/ready``, OpenAPI at ``/q/openapi``, Swagger UI at ``/q/swagger-ui``;
+    * health at ``/health/live`` and ``/health/ready``, OpenAPI at ``/q/openapi``, Swagger UI at ``/q/swagger-ui``;
     * errors as ``{"error": "..."}``; an invalid body is a 400 with the list of ``violations``.
 
     :param audience: the audience expected in Charm tokens when the platform does not inject ``GLUONIFY_OIDC_AUDIENCE``
