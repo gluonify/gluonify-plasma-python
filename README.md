@@ -206,3 +206,11 @@ Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, 
 3. Reserve the derived names against typosquatting (python.md question 5), for example `gluonify-fastapi`, `gluonify-gdown`, `gluonify-charm`, `gluonify-top`, `gluonify-sdk`, `gluonify-flask`, as pending publishers too, or as empty placeholder releases.
 4. Release: set the version in `packages/gluonify/pyproject.toml` (and `__version__` in `gluonify/__init__.py`), commit, `git tag v0.1.0 && git push origin v0.1.0`, then approve the `pypi` deployment in the Actions tab.
 5. Check: `pip download gluonify==0.1.0` and the "Provenance" of the files on PyPI.
+
+## License
+
+Copyright (c) 2026 David Cabillic.
+
+This repository is released under the [Apache License, Version 2.0](LICENSE). You may use, modify and
+redistribute it, including commercially, under the terms of that license; it is provided "as is",
+without warranty. Third-party components remain under their own licenses (see `NOTICE` where present).

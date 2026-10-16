@@ -3,6 +3,7 @@
 name = "gluonify-plasma-python"
 version = "0.1.0"
 description = "Workspace of the Gluonify Python SDK (not published)"
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = ["gluonify[fastapi]"]
 
