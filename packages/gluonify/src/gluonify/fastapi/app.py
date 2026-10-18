@@ -15,7 +15,7 @@ from gluonify import CharmVerifier, GluonifyServices, Principal, Top, defaults
 
 from .auth import GluonifyAuth
 from .health import Health
-from .mcp import McpRegistry, default_registry, mcp_router
+from .mcp import RELAY_APP, McpRegistry, default_registry, mcp_router
 
 __all__ = ["DEFAULT_PORT", "DOCS_URL", "OPENAPI_URL", "PORT_ENV", "READ_ONLY_MESSAGE", "create_app", "serve"]
 
@@ -60,6 +60,7 @@ def create_app(
     dev_identity: Principal | None = None,
     swagger_read_only: bool | None = None,
     mcp: McpRegistry | bool | None = None,
+    mcp_relay_app: str = RELAY_APP,
     **fastapi_kwargs: Any,
 ) -> FastAPI:
     """A FastAPI application for Gluonify.
@@ -77,6 +78,7 @@ def create_app(
     :param swagger_read_only: read-only Swagger UI; ``None`` (default): on the platform only
     :param mcp: serve the MCP tools of the application at ``POST /mcp`` (:mod:`gluonify.fastapi.mcp`): ``True`` for the tools
         declared with :func:`gluonify.fastapi.mcp_tool`, or a :class:`McpRegistry`; ``None``/``False``: no ``/mcp``
+    :param mcp_relay_app: ``gluonify_app`` of the only caller of ``/mcp`` (default ``prism``)
     """
     s = services or defaults()
     if dev_identity is not None and s.on_platform:
@@ -101,7 +103,7 @@ def create_app(
     app.state.gluonify_auth = auth
     app.include_router(health.router())
     if mcp:
-        app.include_router(mcp_router(default_registry if mcp is True else mcp))
+        app.include_router(mcp_router(default_registry if mcp is True else mcp, relay_app=mcp_relay_app))
 
     @app.exception_handler(HTTPException)
     async def http_error(_: Request, e: HTTPException) -> JSONResponse:

@@ -44,6 +44,8 @@ __all__ = [
     "MAX_RESPONSE_BYTES",
     "MAX_SCHEMA_BYTES",
     "MAX_TOOLS",
+    "RELAY_APP",
+    "RELAY_ONLY_MESSAGE",
     "TOOL_NAME",
     "WRITE_ROLE",
     "McpRegistry",
@@ -55,6 +57,9 @@ __all__ = [
 
 log = logging.getLogger("gluonify.mcp")
 
+RELAY_APP = "prism"
+"""Default name of the platform's relay: the only caller allowed on ``/mcp`` (``gluonify_app`` of its service token)."""
+RELAY_ONLY_MESSAGE = "only the platform's relay (Prism) may call /mcp"
 WRITE_ROLE = "gluonify:mcp:write"
 """Role carried by the token Prism sends for the call of a ``write`` tool (the token of a read call does not carry it)."""
 TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{0,40}")
@@ -266,18 +271,26 @@ async def _tools_call(id_: Any, params: Any, registry: McpRegistry, principal: P
     return _result(id_, result)
 
 
-def mcp_router(registry: McpRegistry | None = None, *, path: str = "/mcp", server_version: str = "0.1.0") -> APIRouter:
+def mcp_router(
+    registry: McpRegistry | None = None, *, path: str = "/mcp", relay_app: str = RELAY_APP, server_version: str = "0.1.0"
+) -> APIRouter:
     """The router serving ``POST /mcp`` for ``registry`` (default: :data:`default_registry`, filled by :func:`mcp_tool`).
 
     Include it in an application created by :func:`gluonify.fastapi.create_app` (which also does it with
     ``create_app(..., mcp=True)``): it uses the application's Charm authentication. Tools may be declared before or after
     the router is included: the registry is read at each request.
+
+    Only the platform's relay may call: after the Charm check (401), the token must carry ``gluonify_kind == "service"``
+    and ``gluonify_app == relay_app`` (default ``prism``), the claims Higgs puts in application-to-service tokens; any
+    other valid token (a user's, another application's) is a 403.
     """
     reg = registry if registry is not None else default_registry
     router = APIRouter(tags=["mcp"])
 
     @router.post(path, include_in_schema=False)
     async def mcp(request: Request, principal: Principal = Depends(current_principal)) -> Response:  # noqa: B008
+        if principal.claims.get("gluonify_kind") != "service" or principal.claims.get("gluonify_app") != relay_app:
+            return JSONResponse({"error": RELAY_ONLY_MESSAGE}, status_code=403)
         declared = request.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
             return JSONResponse({"error": "request too large"}, status_code=413)

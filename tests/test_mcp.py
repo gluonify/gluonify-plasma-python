@@ -65,6 +65,11 @@ def reg() -> McpRegistry:
     return r
 
 
+def prism(charm: FakeCharm, **kw: Any) -> str:
+    """A token like the application-to-service token of Prism."""
+    return charm.token(gluonify_kind="service", gluonify_app="prism", **kw)
+
+
 def rpc(c: TestClient, token: str | None, method: str, params: Any = None, id_: Any = 1, **kw: Any) -> Any:
     body: dict[str, Any] = {"jsonrpc": "2.0", "id": id_, "method": method}
     if params is not None:
@@ -86,15 +91,15 @@ def client(charm: FakeCharm, reg: McpRegistry) -> TestClient:
 
 
 def test_initialize(client: TestClient, charm: FakeCharm) -> None:
-    r = rpc(client, charm.token(), "initialize", {"protocolVersion": "2025-03-26"}).json()
+    r = rpc(client, prism(charm), "initialize", {"protocolVersion": "2025-03-26"}).json()
     assert r["id"] == 1
     assert r["result"]["protocolVersion"] == "2025-03-26"
     assert r["result"]["capabilities"] == {"tools": {"listChanged": False}}
-    assert rpc(client, charm.token(), "initialize").json()["result"]["protocolVersion"] == "2025-06-18"
+    assert rpc(client, prism(charm), "initialize").json()["result"]["protocolVersion"] == "2025-06-18"
 
 
 def test_tools_list_shape(client: TestClient, charm: FakeCharm) -> None:
-    tools = rpc(client, charm.token(), "tools/list").json()["result"]["tools"]
+    tools = rpc(client, prism(charm), "tools/list").json()["result"]["tools"]
     assert [t["name"] for t in tools] == ["big", "boom", "echo", "opaque", "raw", "reset_counter", "whoami"]
     echo = next(t for t in tools if t["name"] == "echo")
     assert echo["description"] == "Repeats a text."
@@ -111,26 +116,26 @@ def test_tools_list_shape(client: TestClient, charm: FakeCharm) -> None:
 
 
 def test_read_tool_call(client: TestClient, charm: FakeCharm) -> None:
-    r = call(client, charm.token(sub="prism"), "echo", {"text": "ab", "times": 2}).json()["result"]
+    r = call(client, prism(charm, sub="prism"), "echo", {"text": "ab", "times": 2}).json()["result"]
     assert r["isError"] is False
     assert r["structuredContent"] == {"text": "abab"}
     assert r["content"] == [{"type": "text", "text": '{"text":"abab"}'}]
-    assert call(client, charm.token(sub="prism"), "whoami").json()["result"]["content"][0]["text"] == "prism"
-    assert call(client, charm.token(), "raw", {"a": 7}).json()["result"]["content"][0]["text"] == "[7]"
-    assert call(client, charm.token(), "whoami", None).status_code == 200
-    null_args = rpc(client, charm.token(), "tools/call", {"name": "whoami", "arguments": None}).json()
+    assert call(client, prism(charm, sub="prism"), "whoami").json()["result"]["content"][0]["text"] == "prism"
+    assert call(client, prism(charm), "raw", {"a": 7}).json()["result"]["content"][0]["text"] == "[7]"
+    assert call(client, prism(charm), "whoami", None).status_code == 200
+    null_args = rpc(client, prism(charm), "tools/call", {"name": "whoami", "arguments": None}).json()
     assert null_args["result"]["isError"] is False
 
 
 def test_write_tool_needs_the_write_role(client: TestClient, charm: FakeCharm) -> None:
-    r = call(client, charm.token(roles=["gluonify:mcp:read"]), "reset_counter")
+    r = call(client, prism(charm, roles=["gluonify:mcp:read"]), "reset_counter")
     assert r.status_code == 403
     assert r.json() == {"error": f"missing role: {WRITE_ROLE}"}
-    assert call(client, charm.token(), "reset_counter").status_code == 403
-    ok = call(client, charm.token(roles=[WRITE_ROLE]), "reset_counter").json()["result"]
+    assert call(client, prism(charm), "reset_counter").status_code == 403
+    ok = call(client, prism(charm, roles=[WRITE_ROLE]), "reset_counter").json()["result"]
     assert ok["content"][0]["text"] == "done"
     # the write role does not matter for reads, and listing needs no write role
-    assert call(client, charm.token(roles=[WRITE_ROLE]), "whoami").status_code == 200
+    assert call(client, prism(charm, roles=[WRITE_ROLE]), "whoami").status_code == 200
     assert WRITE_ROLE == "gluonify:mcp:write"
 
 
@@ -143,21 +148,21 @@ def test_401_without_a_valid_token(client: TestClient, header: str | None) -> No
 
 
 def test_wrong_audience_and_expired_are_401(client: TestClient, charm: FakeCharm) -> None:
-    assert rpc(client, charm.token(aud="other"), "tools/list").status_code == 401
-    assert rpc(client, charm.token(ttl=-600), "tools/list").status_code == 401
+    assert rpc(client, prism(charm, aud="other"), "tools/list").status_code == 401
+    assert rpc(client, prism(charm, ttl=-600), "tools/list").status_code == 401
 
 
 def test_unknown_method_and_tool(client: TestClient, charm: FakeCharm) -> None:
-    e = rpc(client, charm.token(), "resources/list", id_="abc").json()
+    e = rpc(client, prism(charm), "resources/list", id_="abc").json()
     assert e["id"] == "abc"
     assert e["error"]["code"] == -32601
-    e = call(client, charm.token(), "nope").json()["error"]
+    e = call(client, prism(charm), "nope").json()["error"]
     assert e["code"] == -32602
     assert "unknown tool" in e["message"]
 
 
 def test_invalid_params(client: TestClient, charm: FakeCharm) -> None:
-    t = charm.token()
+    t = prism(charm)
     assert rpc(client, t, "tools/call").json()["error"]["code"] == -32602
     assert rpc(client, t, "tools/call", {"name": 3}).json()["error"]["code"] == -32602
     assert rpc(client, t, "tools/call", {"name": "echo", "arguments": [1]}).json()["error"]["code"] == -32602
@@ -168,7 +173,7 @@ def test_invalid_params(client: TestClient, charm: FakeCharm) -> None:
 
 
 def test_protocol_errors(client: TestClient, charm: FakeCharm) -> None:
-    h = {"Authorization": f"Bearer {charm.token()}"}
+    h = {"Authorization": f"Bearer {prism(charm)}"}
     assert client.post("/mcp", content=b"{not json", headers=h).json()["error"]["code"] == -32700
     assert client.post("/mcp", json=[1], headers=h).json()["error"]["code"] == -32600
     assert client.post("/mcp", json={"jsonrpc": "1.0", "id": 1, "method": "x"}, headers=h).json()["error"]["code"] == -32600
@@ -179,7 +184,7 @@ def test_protocol_errors(client: TestClient, charm: FakeCharm) -> None:
 
 
 def test_limits(client: TestClient, charm: FakeCharm) -> None:
-    t = charm.token()
+    t = prism(charm)
     huge = {"text": "x" * (mcp_module.MAX_ARGUMENTS_BYTES + 1)}
     assert call(client, t, "echo", huge).json()["error"]["code"] == -32602
     # just over the arguments limit but under the body cap: refused as invalid params
@@ -198,7 +203,7 @@ def test_limits(client: TestClient, charm: FakeCharm) -> None:
 
 def test_tool_failures_leak_nothing(client: TestClient, charm: FakeCharm) -> None:
     for name in ("boom", "opaque"):
-        r = call(client, charm.token(), name).json()["result"]
+        r = call(client, prism(charm), name).json()["result"]
         assert r["isError"] is True
         assert "secret" not in r["content"][0]["text"]
 
@@ -266,7 +271,7 @@ def test_default_registry_and_create_app_switch(charm: FakeCharm) -> None:
 
         auth = GluonifyAuth(lambda: CharmVerifier("u", audience="gluonify-source", issuer=ISS, fetch=charm.jwks))
         on = TestClient(create_app("t", audience="a", services=GluonifyServices({}), auth=auth, mcp=True))
-        assert call(on, charm.token(), "ping").json()["result"]["content"][0]["text"] == "pong"
+        assert call(on, prism(charm), "ping").json()["result"]["content"][0]["text"] == "pong"
         off = TestClient(create_app("t", audience="a", services=GluonifyServices({}), auth=auth))
         assert off.post("/mcp", json={}).status_code == 404
     finally:
@@ -302,3 +307,33 @@ def test_serves_mcp_reader(tmp_path: Path) -> None:
     dist("gluonify", "[gluonify.uses]\ncharm = gluonify.charm\n\n[gluonify.mcp]\nmcp = gluonify.fastapi.mcp\n")
     assert markers.serves_mcp(tmp_path)
     assert markers.infer(tmp_path).services == ("charm",)  # mcp never leaks into uses
+
+
+RELAY_ONLY = {"error": "only the platform's relay (Prism) may call /mcp"}
+
+
+def test_only_prism_may_call(client: TestClient, charm: FakeCharm) -> None:
+    user = charm.token(sub="ada", roles=[WRITE_ROLE])  # a customer's user token, right audience
+    other_app = charm.token(sub="app:shop", gluonify_kind="service", gluonify_app="shop")
+    node = charm.token(gluonify_kind="node", gluonify_app="prism")
+    no_kind = charm.token(gluonify_app="prism")
+    for t in (user, other_app, node, no_kind):
+        for method in ("tools/list", "initialize"):
+            r = rpc(client, t, method)
+            assert r.status_code == 403
+            assert r.json() == RELAY_ONLY
+        assert call(client, t, "whoami").status_code == 403
+    assert rpc(client, prism(charm), "tools/list").status_code == 200
+
+
+def test_401_comes_before_the_relay_check(client: TestClient) -> None:
+    assert rpc(client, None, "tools/list").status_code == 401
+    assert rpc(client, "not-a-jwt", "tools/list").status_code == 401
+
+
+def test_relay_app_is_configurable(charm: FakeCharm, reg: McpRegistry) -> None:
+    auth = GluonifyAuth(lambda: CharmVerifier("u", audience="gluonify-source", issuer=ISS, fetch=charm.jwks))
+    c = TestClient(create_app("t", audience="a", services=GluonifyServices({}), auth=auth, mcp=reg, mcp_relay_app="relay2"))
+    assert rpc(c, prism(charm), "tools/list").status_code == 403
+    ok = charm.token(gluonify_kind="service", gluonify_app="relay2")
+    assert rpc(c, ok, "tools/list").status_code == 200
