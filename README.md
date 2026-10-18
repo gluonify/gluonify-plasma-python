@@ -24,6 +24,7 @@ The starter application that uses it is [`gluonify-source-python`](https://githu
 6. [How to reach gDown](#6-how-to-reach-gdown)
 7. [FastAPI](#7-fastapi)
 8. [The uses markers (contract read by Bup)](#8-the-uses-markers-contract-read-by-bup)
+   - [MCP tools of an application](#8-bis-mcp-tools-of-an-application)
 9. [Configuration reference](#9-configuration-reference)
 10. [Development](#10-development)
 11. [Publishing on PyPI](#11-publishing-on-pypi)
@@ -44,6 +45,7 @@ The starter application that uses it is [`gluonify-source-python`](https://githu
 | FastAPI: `require_roles`, `current_principal`, `optional_principal`; 401 / 403 / 503 as `{"error": …}` | ✅ | |
 | FastAPI: health `/health/live`, `/health/ready` (MicroProfile Health body, 503 when DOWN) | ✅ | not under `/q/` (the Quarkus namespace); Bup sends both paths to the platform, blocked at the ingress in PRD |
 | FastAPI: app factory (`create_app`: OpenAPI `/openapi.json`, Swagger UI `/docs`, read-only on the platform, 400 with `violations`) | ✅ | Swagger UI does not follow a light/dark theme (no interface here) |
+| FastAPI: MCP tools of an application (`@mcp_tool`, `mcp_router`, `create_app(mcp=True)`: JSON-RPC 2.0 `POST /mcp`, `initialize` / `tools/list` / `tools/call`, write tools need `gluonify:mcp:write`) | ✅ SDK side | [§8 bis](#8-bis-mcp-tools-of-an-application); Prism does not relay yet (app-mcp.md phases 2-3) |
 | `uses` inference (`[gluonify.uses]` entry points of `gluonify`/`gluonify-*`: `gluonify` -> `charm`; distributions `neo4j`/`neomodel` -> `gdown`) | ✅ SDK side | Bup does not read them yet (contract in [§8](#8-the-uses-markers-contract-read-by-bup)) |
 | FastAPI as the extra `gluonify[fastapi]` of the one distribution (`gluonify.fastapi`; clear `ImportError` without the extra) | ✅ | the former `gluonify-fastapi` distribution is gone (never published); the name stays reserved |
 | Python ≥ 3.13, typed (`py.typed`, mypy strict), ruff | ✅ | |
@@ -169,6 +171,74 @@ charm = gluonify.charm
 
 What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the distribution `neo4j` or `neomodel` -> `gdown`, so only the apps that really reach gDown get `?gdown`; the extra `fastapi` -> none (it adds dependencies, not markers: `gluonify.fastapi` reaches services only through `gluonify`, whose `charm` marker is there with or without the extra); Top has no marker (the agent injects its values, `"top": true` is not a `uses`). `gdownDatabase` is **not** inferred for Python yet: declare `"gdownDatabase": true` in `gluonify.json`.
 
+## 8 bis. MCP tools of an application
+
+An application can declare **business tools** (diagnostics, internal state, statistics, settings) that a customer's AI assistant calls through **Prism**, the customers' MCP, as `app.<application>.<tool>`. The application manages no AI token, rate limit or audit: Prism does. Specification: `gluonify-codex/app-mcp.md`; the Java counterpart is the Quarkus helper of `gluonify-plasma`, with the same wire behaviour.
+
+```python
+from pydantic import BaseModel, Field
+
+from gluonify import Principal
+from gluonify.fastapi import create_app, mcp_tool
+
+app = create_app("shop", audience="gluonify-shop", mcp=True)  # mounts POST /mcp
+
+
+class StatsInput(BaseModel):
+    days: int = Field(7, ge=1, le=90)
+
+
+@mcp_tool(name="order_stats", description="Number of orders per day over the last N days.")
+def order_stats(args: StatsInput, caller: Principal) -> dict:
+    return {"days": args.days, "orders": count_orders(args.days)}
+
+
+@mcp_tool(name="reset_cache", description="Empties the product cache.", write=True)
+async def reset_cache() -> str:
+    ...
+    return "cache emptied"
+```
+
+**API** (`gluonify.fastapi`):
+
+| Item | Role |
+|---|---|
+| `@mcp_tool(name=, description=, write=False, input_schema=None, registry=None)` | declares a function (sync or async). `name` defaults to the function name, `description` to the first paragraph of the docstring |
+| arguments | at most one parameter for the arguments: annotated with a pydantic `BaseModel` (the input schema is the model's JSON Schema, the arguments are validated against it) or, with `input_schema=` (JSON Schema of type object), a `dict`; no parameter = no argument. A parameter annotated `gluonify.Principal` receives the caller's identity |
+| result | a `str` (as is) or anything pydantic serialises to JSON (`BaseModel`, `dict`, `list`...). A `dict`/model result is also returned as `structuredContent`. An exception becomes an `isError` result saying only `the tool failed` (detail in the `gluonify.mcp` log, never to the AI) |
+| `mcp_router(registry=None, path="/mcp")` | the `APIRouter` serving `POST /mcp`; the registry is read at each request. `create_app(..., mcp=True)` includes it for the tools of `@mcp_tool` (`mcp=<McpRegistry>` for your own registry) |
+| `McpRegistry` | the declared tools (`.tool(...)` decorator, `.tools()`, `.clear()`); `mcp_tool` fills `gluonify.fastapi.mcp.default_registry` |
+
+**Wire behaviour** (identical in Java): JSON-RPC 2.0 over `POST /mcp`, `application/json`, one message per request (no batch, no streaming).
+
+| Message | Answer |
+|---|---|
+| `initialize` | `protocolVersion` (the client's when it is `2025-06-18`, `2025-03-26` or `2024-11-05`, else `2025-06-18`), `capabilities: {"tools": {"listChanged": false}}`, `serverInfo` |
+| `tools/list` | `{"tools": [{"name", "description", "inputSchema", "annotations": {"readOnlyHint": !write}, "write": bool}]}` sorted by name |
+| `tools/call` `{"name", "arguments"}` | `{"content": [{"type": "text", "text": ...}], "structuredContent"?: {...}, "isError": false}`; a tool failure or a response over the limit is `"isError": true` with a generic text |
+| message without `id` (notification) | `202`, empty body |
+| unknown method | JSON-RPC error `-32601` |
+| invalid params: missing or non-string `name`, `arguments` not an object, **unknown tool**, arguments invalid for the model, arguments over 64 KiB | JSON-RPC error `-32602` |
+| not JSON / not a JSON-RPC 2.0 request | `-32700` / `-32600` |
+| body over 68 KiB (64 KiB + envelope) | HTTP `413` `{"error": "request too large"}` |
+
+Errors of JSON-RPC are HTTP 200 with an `error` object; authentication and rights are HTTP errors (below).
+
+**Limits** (constants of `gluonify.fastapi.mcp`, same as Prism and the Java helper): tool name `[a-z][a-z0-9_]{0,40}`; at most **50** tools; input schema at most **16 KiB**; arguments at most **64 KiB**; response at most **256 KiB**. The first three are checked **at declaration** (`ValueError`, so the application does not start with an invalid tool); a name declared twice is refused too.
+
+**Caller identity.** Prism calls with the existing **application-to-service Charm token** (ES256, JWKS, audience of the application), no new header (app-mcp.md decision 3). `POST /mcp` uses the application's `GluonifyAuth` (the dependency `current_principal`): `401` `{"error": ...}` with `WWW-Authenticate: Bearer` without a valid token (missing, bad signature, wrong audience, expired); `503` when Charm is not granted. Any valid token may list and call **read** tools. A tool declared `write=True` needs the role **`gluonify:mcp:write`** (`gluonify.fastapi.WRITE_ROLE`) in the `roles` claim of the token: `403` `{"error": "missing role: gluonify:mcp:write"}` otherwise, before the tool runs. That role is the choice of this SDK (app-mcp.md fixes none): Prism puts it in the token of a call it relays for an **approved** write proposal (decision 4), and in no other token. The Java helper must use the same role and the same `403`. Prism's token never reaches the application as the AI's token: the application only sees Prism's own identity, and the response is untrusted data for Prism (it never interprets it).
+
+**Exposure.** `/mcp` is meant for the **internal listener** only; Higgs blocks it at the public ingress in PRD (`ManagementPaths`, like `/health/`), nothing to configure here. It is not in the OpenAPI contract.
+
+**The marker Bup reads.** The distribution carries a second entry-point group, **`gluonify.mcp`** (it is a capability, not a service, so it is **not** in `gluonify.uses` and must never become a `?mcp` service):
+
+```ini
+[gluonify.mcp]
+mcp = gluonify.fastapi.mcp
+```
+
+Same reading rules as the `uses` markers (nothing imported, only `entry_points.txt` of the trusted distributions `gluonify` / `gluonify-*`, PEP 503 names); the reference reader is `gluonify.markers.serves_mcp(site_packages)`. Bup sets `mcp: true` for the application when it finds it (app-mcp.md § 3, decision 2). Limitation: the marker says that the SDK able to serve MCP is installed, not that the application mounted the router (a single distribution; the `fastapi` extra adds no marker). Prism's discovery at deployment (`tools/list`) is the confirmation: an application without `/mcp` answers 404 and nothing is relayed. A stricter signal (a dedicated `gluonify-mcp` distribution behind an extra `gluonify[mcp]`) stays possible if false positives matter.
+
 ## 9. Configuration reference
 
 There is nothing to configure on the platform. Variables read:
@@ -189,13 +259,13 @@ There is nothing to configure on the platform. Variables read:
 
 ```bash
 uv sync                    # Python 3.13 (.python-version), gluonify[fastapi] in editable mode, dev group
-uv run pytest --cov        # 91 tests, coverage >= 90 % required (99 % today)
+uv run pytest --cov        # 114 tests, coverage >= 90 % required (99 % today)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                # strict
 uv build --package gluonify  # dist/gluonify-*.whl and sdist
 ```
 
-Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, `markers.py`), `packages/gluonify/src/gluonify/fastapi/` (`auth.py`, `health.py`, `app.py`), `tests/` (Charm faked by a P-256 key pair and its JWKS). CI: `.github/workflows/ci.yml` on every push.
+Layout: `packages/gluonify/src/gluonify/` (`services.py`, `charm.py`, `top.py`, `markers.py`), `packages/gluonify/src/gluonify/fastapi/` (`auth.py`, `health.py`, `mcp.py`, `app.py`), `tests/` (Charm faked by a P-256 key pair and its JWKS). CI: `.github/workflows/ci.yml` on every push.
 
 ## 11. Publishing on PyPI
 

@@ -12,14 +12,19 @@ except ImportError as e:  # tests/test_fastapi.py hides fastapi to check this me
 from .app import DEFAULT_PORT, PORT_ENV, create_app, serve
 from .auth import GluonifyAuth, current_principal, optional_principal, require_roles
 from .health import Health
+from .mcp import WRITE_ROLE, McpRegistry, mcp_router, mcp_tool
 
 __all__ = [
     "DEFAULT_PORT",
     "PORT_ENV",
+    "WRITE_ROLE",
     "GluonifyAuth",
     "Health",
+    "McpRegistry",
     "create_app",
     "current_principal",
+    "mcp_router",
+    "mcp_tool",
     "optional_principal",
     "require_roles",
     "serve",

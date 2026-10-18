@@ -16,9 +16,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["CLIENTS", "GROUP", "Inference", "infer", "is_trusted", "normalize"]
+__all__ = ["CLIENTS", "GROUP", "MCP_GROUP", "Inference", "infer", "is_trusted", "normalize", "serves_mcp"]
 
 GROUP = "gluonify.uses"
+MCP_GROUP = "gluonify.mcp"
 _SERVICE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _REFUSED = frozenset({"higgs"})
 
@@ -101,3 +102,23 @@ def infer(site_packages: Path, trusted: tuple[str, ...] = ("gluonify",)) -> Infe
         {k: tuple(sorted(v)) for k, v in sorted(sources.items())},
         tuple(ignored),
     )
+
+
+def serves_mcp(site_packages: Path, trusted: tuple[str, ...] = ("gluonify",)) -> bool:
+    """True when a trusted distribution installed in ``site_packages`` carries the ``mcp`` entry of the group
+    ``gluonify.mcp``: the application can serve MCP tools (``POST /mcp``). Same reading rules as :func:`infer`; the marker
+    is a capability, never a service, so it is not part of ``uses``."""
+    for d in sorted(site_packages.glob("*.dist-info")):
+        name = _name(d)
+        ep = d / "entry_points.txt"
+        if name is None or not is_trusted(name, trusted) or not ep.is_file():
+            continue
+        parser = configparser.ConfigParser(delimiters=("=",), interpolation=None)
+        parser.optionxform = str  # type: ignore[assignment,method-assign]
+        try:
+            parser.read_string(ep.read_text(encoding="utf-8"))
+        except configparser.Error:
+            continue
+        if parser.has_section(MCP_GROUP) and parser.has_option(MCP_GROUP, "mcp"):
+            return True
+    return False

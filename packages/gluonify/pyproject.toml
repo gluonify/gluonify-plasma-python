@@ -35,6 +35,11 @@ Source = "https://github.com/gluonify/gluonify-plasma-python"
 [project.entry-points."gluonify.uses"]
 charm = "gluonify.charm"
 
+# The "mcp" marker read by Bup: the application can serve MCP tools (gluonify.fastapi.mcp_tool / mcp_router). It is a
+# capability, not a service, hence its own group (README "MCP tools of an application"). Bup must NOT add it to uses.
+[project.entry-points."gluonify.mcp"]
+mcp = "gluonify.fastapi.mcp"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
