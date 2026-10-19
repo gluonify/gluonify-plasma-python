@@ -259,7 +259,7 @@ There is nothing to configure on the platform. Variables read:
 
 ```bash
 uv sync                    # Python 3.13 (.python-version), gluonify[fastapi] in editable mode, dev group
-uv run pytest --cov        # 114 tests, coverage >= 90 % required (99 % today)
+uv run pytest --cov        # 115 tests (test_lint runs ruff check: a violation fails the tests), coverage >= 99 % required (ratchet, gluonify-plasma README "Quality gates")
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                # strict
 uv build --package gluonify  # dist/gluonify-*.whl and sdist
