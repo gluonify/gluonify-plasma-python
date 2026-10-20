@@ -10,6 +10,7 @@ One distribution, **`gluonify`**, published on PyPI under the `gluonify` organis
 |---|---|---|
 | `pip install gluonify` | `gluonify` | discovery of platform services (`GLUONIFY_SERVICE_<APP>_URL`, service tokens), Charm (JWT verification against the JWKS, ES256), Top (configuration and secrets), the `uses` marker reader |
 | `pip install "gluonify[fastapi]"` | `gluonify.fastapi` | adds fastapi and uvicorn: a dependency that authenticates a request with Charm and checks roles, health endpoints, the app factory |
+| `pip install "gluonify[fermion]"` | `gluonify.fermion` | adds websockets: `FermionNode`, a Python process as a gluonify-fermion node (the message records need only the standard library) |
 
 Importing `gluonify.fastapi` without the extra raises an `ImportError` that gives the `pip install` command.
 
@@ -50,7 +51,8 @@ The starter application that uses it is [`gluonify-source-python`](https://githu
 | FastAPI as the extra `gluonify[fastapi]` of the one distribution (`gluonify.fastapi`; clear `ImportError` without the extra) | ✅ | the former `gluonify-fastapi` distribution is gone (never published); the name stays reserved |
 | Python ≥ 3.13, typed (`py.typed`, mypy strict), ruff | ✅ | |
 | Publication on PyPI by Trusted Publishing with PEP 740 attestations | 🟡 | workflow ready for `gluonify`; nothing published, the trusted publisher is to be added by the user ([§11](#11-publishing-on-pypi)) |
-| Clients for Crystallon, Fermion, Photon | ❌ | Java only |
+| Fermion node client (`gluonify.fermion`: the `FermionMsg` twin as frozen dataclasses, `to_json`/`from_json`; `FermionNode`: `auth` then `hello` with skills and capacity, concurrent tasks with a heartbeat, `TaskContext.progress`, `cancel` to `SkillHandler.on_cancel`, `done`/`error` callbacks, bounded `start` queue during an outage, reconnection) | ✅ | [§8 ter](#8-ter-fermion-node-client); the frames are those of the Java SDK, checked byte for byte against `gluonify-plasma/sdk/src/test/resources/fermion/*.json` (copied in `tests/fixtures/fermion`); no `fermion` uses marker (see §8 ter); tested against a fake fermion, not yet against a real one |
+| Clients for Crystallon, Photon | ❌ | Java only |
 | End-to-end test on a real cluster | ✅ | phase V3-4 of python.md: `gluonify-chamber/scripts/e2e-source-python.sh` with gluonify-source-python, 29/29 on 2026-10-14 (arm64): Charm tokens, Top (`APP_GREETING`), gDown over Bolt+TLS, `uses` inferred by Bup, sleep and wake; the SDK wheel is built from this checkout until it is on PyPI |
 
 ## 2. Quick start
@@ -170,6 +172,39 @@ charm = gluonify.charm
 4. **Merge**, as for Java: the declared services (request, else `gluonify.json`) as they are, then the inferred ones not declared, as **`?name`** (optional). Result fields `usesInferred`, `usesSources` (`{"charm": ["gluonify"], "gdown": ["neo4j"]}`), `usesEffective`.
 
 What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the distribution `neo4j` or `neomodel` -> `gdown`, so only the apps that really reach gDown get `?gdown`; the extra `fastapi` -> none (it adds dependencies, not markers: `gluonify.fastapi` reaches services only through `gluonify`, whose `charm` marker is there with or without the extra); Top has no marker (the agent injects its values, `"top": true` is not a `uses`). `gdownDatabase` is **not** inferred for Python yet: declare `"gdownDatabase": true` in `gluonify.json`.
+
+## 8 ter. Fermion node client
+
+`pip install "gluonify[fermion]"`. The protocol twin (`Auth`, `Hello`, `Start`, `Command`, `Result`, `Progress`, `Done`, `Cancel`, `Error`, `SkillDescriptor`, `NodeCapacity`, `Window`…) writes exactly the JSON of the Java SDK (`to_json`: field order, `t` first, absent values left out, sorted slot maps); `from_json` ignores unknown fields and raises `FermionProtocolError` for an unknown type. A node:
+
+```python
+from gluonify.fermion import FermionNode, NodeCapacity, SkillFailure, SkillHandler, TaskContext, INTERRUPTED
+
+class Run(SkillHandler):
+    action = "AGENT_RUN_L0_EDGE"
+    requires = {"heavy": 1}
+
+    async def handle(self, context: TaskContext):
+        await context.progress({"phase": "edit"})          # structured event, kept in fermion's timeline
+        if context.cancelled.is_set():
+            raise SkillFailure(INTERRUPTED, "stopped")
+        return {"branch": "run/T-1/r-7"}
+
+node = FermionNode("https://fermion.lan", "superposition", "agent-mac", token=read_token,
+                   handlers=[Run()], capacity=NodeCapacity.of({"heavy": 1}, ["23:30-07:00"]))
+node.on_done(lambda correlation_id, payload: ...)        # end of a workflow this node started
+await node.run()                                          # until await node.stop()
+```
+
+| Item | Behaviour |
+|---|---|
+| connection | `<url>/ws/fermion/<app>-<node>` (`http(s)` becomes `ws(s)`), first frame `auth` with `token()` (called at each connection; no token: no connection, retried), then `hello`; reconnection every `reconnect_interval` (10 s) |
+| tasks | each `command` runs in its own asyncio task; `SkillFailure(kind, message)` is a failure with that kind, any other exception a failure without kind; a heartbeat `progress` every `heartbeat_interval` (60 s, `0` disables) while the handler runs |
+| cancel | `cancel` sets `context.cancelled`, fills `context.cancel` and calls `on_cancel` (no-op by default); for a task that does not run here the node answers `interrupted` at once |
+| starts | `await start_workflow(workflow, correlation_id, payload, global_transaction_id, organization)`; during an outage the frame waits in a queue of `queue_size` (100), `FermionQueueFullError` when full, replayed after `hello` |
+| `busy` | a handler may raise `SkillFailure(BUSY, …)`: fermion gives the task to another node without counting an attempt |
+
+**No `fermion` uses marker.** Unlike the Java `fermion-client` (a separate artifact that carries its marker), `gluonify.fermion` is part of the base distribution, and an extra adds dependencies, never markers (§8): a marker here would grant Fermion to every Python application. An application that is a Fermion node declares `"uses": ["fermion"]` in its appspec; a separate distribution with its own marker is a decision to take with the user (`plan.md`).
 
 ## 8 bis. MCP tools of an application
 

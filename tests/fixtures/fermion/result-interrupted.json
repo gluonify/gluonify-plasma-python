@@ -1,0 +1,1 @@
+{"t":"result","correlationId":"c-1","globalTransactionId":"run-7","action":"AGENT_RUN_L0_EDGE","success":false,"error":"stopped by the kill switch","errorKind":"interrupted","payload":{},"stepId":"Task_Run"}

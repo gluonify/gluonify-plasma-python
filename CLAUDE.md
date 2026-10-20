@@ -5,7 +5,7 @@ The **Python SDK** of Gluonify (one distribution `gluonify`, with the extra `glu
 Shared context for every gluonify-* repository (rules, conventions, Edge model): `/Users/a/dev/gluonify/CLAUDE.md` (in French).
 
 ## Commands
-- `uv sync` then `uv run pytest --cov` (93 tests, coverage gate 90 %), `uv run ruff check . && uv run ruff format --check .`, `uv run mypy` (strict). Python 3.13 (`.python-version`). uv is the workspace and lock tool; hatchling is the build backend.
+- `uv sync` then `uv run pytest --cov` (coverage gate 99 %), `uv run ruff check . && uv run ruff format --check .`, `uv run mypy` (strict). Python 3.13 (`.python-version`). uv is the workspace and lock tool; hatchling is the build backend.
 - `uv build --package gluonify -o dist`: the wheel and sdist. Never publish by hand: `publish.yml` (tag `vX.Y.Z`, environment `pypi` with manual approval, Trusted Publishing).
 
 ## Rules

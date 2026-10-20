@@ -24,6 +24,11 @@ fastapi = [
     "fastapi>=0.115",
     "uvicorn>=0.34",
 ]
+# pip install "gluonify[fermion]": gluonify.fermion.FermionNode, a Python process as a gluonify-fermion node (WebSocket).
+# The message records and to_json / from_json need nothing beyond the standard library.
+fermion = [
+    "websockets>=15",
+]
 
 [project.urls]
 Homepage = "https://gluonify.io"

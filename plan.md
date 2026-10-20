@@ -5,7 +5,7 @@
 3. **gDown**: once the platform injects `GLUONIFY_GDOWN_BOLT_URL` and the CA, align the CA variable name (`GLUONIFY_GDOWN_CA_FILE`) in the README snippet and check it end to end; Bup reads `neo4j`/`neomodel` to infer `?gdown`.
 4. **`gdownDatabase` inferred** for Python (Java infers it from configuration references): a second entry point group, or a key in `[tool.gluonify]`.
 5. **Developer machine mode** (`~/.gluonify/config.json`, discovery document, developer token refresh), as `DeveloperConfig`/`DeveloperTokens` in Java.
-6. **Clients** for Crystallon (rendering), Fermion and Photon (signature check of webhooks), each with its marker.
+6. **Clients** for Crystallon (rendering) and Photon (signature check of webhooks), each with its marker. Fermion done 2026-10-20 (`gluonify.fermion`, extra `fermion` = `websockets`, gluonify-superposition phase 0 / E5: frames byte for byte with the Java fixtures, `FermionNode` against a fake fermion, 100 % covered). **Left for Fermion**: the uses marker (a separate distribution `gluonify-fermion-client` carrying `fermion`, or an explicit `uses` in the appspec: decision of the user, the base distribution must not grant Fermion to every app), a test against a real fermion (superposition phase 2 e2e).
 7. ~~e2e on a real cluster~~ done 2026-10-14: `gluonify-chamber/scripts/e2e-source-python.sh` 29/29 (arm64), SDK installed from this checkout (wheel built from git HEAD) until it is on PyPI.
 8. Pin the GitHub Actions by commit SHA.
 9. ~~Health at `/health/live` and `/health/ready`~~ done 2026-10-15: `/q/` is the Quarkus namespace (no alias, pre-release); Bup sends both paths, Higgs blocks `/health/` in PRD.

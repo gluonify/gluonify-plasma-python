@@ -1,0 +1,1 @@
+{"t":"progress","correlationId":"c-1","globalTransactionId":"run-7","action":"AGENT_RUN_L0_EDGE","stepId":"Task_Run","message":"gate","data":{"phase":"gate","tool":"Bash","costUsd":0.25,"turns":4}}
