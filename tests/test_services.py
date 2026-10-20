@@ -21,8 +21,9 @@ def test_keys_follow_the_java_sdk() -> None:
 
 @pytest.mark.parametrize("bad", ["", "-a", "a-", "A B", "a_b", "x" * 64, "é"])
 def test_invalid_service_names_are_refused(bad: str) -> None:
+    services = GluonifyServices({})
     with pytest.raises(ValueError, match="not a service name"):
-        GluonifyServices({}).resolve(bad)
+        services.resolve(bad)
 
 
 def test_names_are_normalised() -> None:
@@ -87,8 +88,9 @@ def test_platform_token_file_unreadable(tmp_path: Path) -> None:
     s = GluonifyServices(
         {**PLATFORM, "GLUONIFY_SERVICE_X_URL": "http://x", "GLUONIFY_X_TOKEN_FILE": str(tmp_path)}  # a directory
     )
+    service = s.resolve("x")
     with pytest.raises(GluonifyServicesError, match="cannot read the token file of x") as e:
-        s.resolve("x").token()
+        service.token()
     assert str(tmp_path) in str(e.value)
 
 
@@ -171,8 +173,9 @@ def test_off_platform_without_address() -> None:
 
 @pytest.mark.parametrize("bad", ["ftp://x", "/relative", "x", "http://", "http://[bad"])
 def test_invalid_urls(bad: str) -> None:
+    services = GluonifyServices({"GLUONIFY_SERVICE_X_URL": bad})
     with pytest.raises(GluonifyServicesError, match="GLUONIFY_SERVICE_X_URL"):
-        GluonifyServices({"GLUONIFY_SERVICE_X_URL": bad}).resolve("x")
+        services.resolve("x")
 
 
 @pytest.mark.parametrize("scheme", ["http", "https", "ws", "wss"])

@@ -29,8 +29,9 @@ def test_blank_is_absent() -> None:
 
 def test_require() -> None:
     assert Top({"APP_A": "1"}).require("a") == "1"
+    top = Top({})
     with pytest.raises(TopKeyMissingError) as e:
-        Top({}).require("webhook.key")
+        top.require("webhook.key")
     assert "APP_WEBHOOK_KEY" in str(e.value)
     assert "WEBHOOK_KEY" in str(e.value)
     assert str(TopKeyMissingError()) == ""

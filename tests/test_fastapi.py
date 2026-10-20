@@ -113,13 +113,10 @@ def test_dev_identity(charm: FakeCharm) -> None:
 
 
 def test_dev_identity_refused_on_the_platform() -> None:
+    services = GluonifyServices({"GLUONIFY_ENVIRONMENT": "PRD"})
+    identity = Principal("dev", frozenset(), {})
     with pytest.raises(RuntimeError, match="refused on the platform"):
-        create_app(
-            "x",
-            audience="a",
-            services=GluonifyServices({"GLUONIFY_ENVIRONMENT": "PRD"}),
-            dev_identity=Principal("dev", frozenset(), {}),
-        )
+        create_app("x", audience="a", services=services, dev_identity=identity)
 
 
 def test_default_auth_uses_the_environment(charm: FakeCharm, monkeypatch: pytest.MonkeyPatch) -> None:

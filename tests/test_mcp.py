@@ -215,23 +215,29 @@ def test_registration_rules() -> None:
     def a1() -> str:
         return ""
 
+    duplicate = r.tool(name="a1", description="d")
     with pytest.raises(ValueError, match="twice"):
-        r.tool(name="a1", description="d")(a1)
+        duplicate(a1)
     for bad in ("", "A", "1a", "a-b", "a" * 42, "é"):
+        declare = r.tool(name=bad or " ", description="d")
         with pytest.raises(ValueError, match="invalid MCP tool name"):
-            r.tool(name=bad or " ", description="d")(a1)
+            declare(a1)
     r.tool(name="a" * 41, description="d")(a1)
+    nodesc = r.tool(name="nodesc")
     with pytest.raises(ValueError, match="description"):
-        r.tool(name="nodesc")(a1)
+        nodesc(a1)
+    arr = r.tool(name="arr", description="d", input_schema={"type": "array"})
     with pytest.raises(ValueError, match="object schema"):
-        r.tool(name="arr", description="d", input_schema={"type": "array"})(a1)
+        arr(a1)
+    fat = r.tool(name="fat", description="d", input_schema={"type": "object", "description": "x" * 17000})
     with pytest.raises(ValueError, match="16 KiB"):
-        r.tool(name="fat", description="d", input_schema={"type": "object", "description": "x" * 17000})(a1)
+        fat(a1)
 
     def two(a: dict[str, Any], b: dict[str, Any]) -> None: ...
 
+    declare_two = r.tool(name="two", description="d")
     with pytest.raises(TypeError, match="one arguments parameter"):
-        r.tool(name="two", description="d")(two)
+        declare_two(two)
 
     def documented() -> str:
         """First line
@@ -257,8 +263,9 @@ def test_at_most_50_tools() -> None:
 
     for i in range(50):
         r.tool(name=f"t{i}", description="d")(f)
+    declare_last = r.tool(name="t50", description="d")
     with pytest.raises(ValueError, match="at most 50"):
-        r.tool(name="t50", description="d")(f)
+        declare_last(f)
 
 
 def test_default_registry_and_create_app_switch(charm: FakeCharm) -> None:

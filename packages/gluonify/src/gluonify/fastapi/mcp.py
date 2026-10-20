@@ -26,7 +26,7 @@ import re
 import typing
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -152,15 +152,8 @@ class McpRegistry:
         self._tools[tool.name] = tool
 
     @staticmethod
-    def _build(
-        func: Callable[..., Any], name: str | None, description: str | None, write: bool, input_schema: dict[str, Any] | None
-    ) -> McpTool:
-        name = name or func.__name__
-        if not TOOL_NAME.fullmatch(name):
-            raise ValueError(f"invalid MCP tool name {name!r}: must match [a-z][a-z0-9_]{{0,40}}")
-        description = description or (inspect.getdoc(func) or "").strip().split("\n\n")[0].replace("\n", " ")
-        if not description:
-            raise ValueError(f"MCP tool {name}: a description is required (argument or docstring)")
+    def _parameters(name: str, func: Callable[..., Any]) -> tuple[type[BaseModel] | None, str | None, str | None]:
+        """The model, the arguments parameter and the Principal parameter of a tool function."""
         hints = typing.get_type_hints(func)
         model: type[BaseModel] | None = None
         argument: str | None = None
@@ -175,6 +168,19 @@ class McpRegistry:
                     model = hint
             else:
                 raise TypeError(f"MCP tool {name}: one arguments parameter and optionally a Principal, found also {p.name!r}")
+        return model, argument, principal
+
+    @staticmethod
+    def _build(
+        func: Callable[..., Any], name: str | None, description: str | None, write: bool, input_schema: dict[str, Any] | None
+    ) -> McpTool:
+        name = name or func.__name__
+        if not TOOL_NAME.fullmatch(name):
+            raise ValueError(f"invalid MCP tool name {name!r}: must match [a-z][a-z0-9_]{{0,40}}")
+        description = description or (inspect.getdoc(func) or "").strip().split("\n\n")[0].replace("\n", " ")
+        if not description:
+            raise ValueError(f"MCP tool {name}: a description is required (argument or docstring)")
+        model, argument, principal = McpRegistry._parameters(name, func)
         if input_schema is None:
             input_schema = model.model_json_schema() if model else {"type": "object", "properties": {}}
         if input_schema.get("type") != "object":
@@ -271,6 +277,56 @@ async def _tools_call(id_: Any, params: Any, registry: McpRegistry, principal: P
     return _result(id_, result)
 
 
+def _is_relay(principal: Principal, relay_app: str) -> bool:
+    """True for the application-to-service token of the platform's relay."""
+    return principal.claims.get("gluonify_kind") == "service" and principal.claims.get("gluonify_app") == relay_app
+
+
+async def _read_body(request: Request) -> bytes | None:
+    """The request body, or None when it is larger than :data:`MAX_BODY_BYTES` (declared or actual)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        return None
+    raw = await request.body()
+    return raw if len(raw) <= MAX_BODY_BYTES else None
+
+
+def _decode(raw: bytes) -> tuple[dict[str, Any], Response | None]:
+    """The JSON-RPC message, or the response to send at once (error, or 202 for a notification)."""
+    try:
+        message = json.loads(raw)
+    except ValueError:
+        return {}, _error(None, PARSE_ERROR, "parse error")
+    if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
+        return {}, _error(None, INVALID_REQUEST, "not a JSON-RPC 2.0 request")
+    if "id" not in message:
+        return {}, Response(status_code=202)  # notification: no answer
+    id_ = message["id"]
+    if isinstance(id_, bool) or not isinstance(id_, str | int | float):
+        return {}, _error(None, INVALID_REQUEST, "id must be a string or a number")
+    return message, None
+
+
+async def _dispatch(message: dict[str, Any], reg: McpRegistry, principal: Principal, server_version: str) -> Response:
+    """Answers one decoded request: initialize, tools/list, tools/call, or method not found."""
+    id_, method, params = message["id"], message["method"], message.get("params")
+    if method == "initialize":
+        asked = params.get("protocolVersion") if isinstance(params, dict) else None
+        return _result(
+            id_,
+            {
+                "protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": SERVER_NAME, "version": server_version},
+            },
+        )
+    if method == "tools/list":
+        return _result(id_, {"tools": [t.describe() for t in reg.tools()]})
+    if method == "tools/call":
+        return await _tools_call(id_, params, reg, principal)
+    return _error(id_, METHOD_NOT_FOUND, f"method not found: {method[:64]}")
+
+
 def mcp_router(
     registry: McpRegistry | None = None, *, path: str = "/mcp", relay_app: str = RELAY_APP, server_version: str = "0.1.0"
 ) -> APIRouter:
@@ -288,41 +344,15 @@ def mcp_router(
     router = APIRouter(tags=["mcp"])
 
     @router.post(path, include_in_schema=False)
-    async def mcp(request: Request, principal: Principal = Depends(current_principal)) -> Response:  # noqa: B008
-        if principal.claims.get("gluonify_kind") != "service" or principal.claims.get("gluonify_app") != relay_app:
+    async def mcp(request: Request, principal: Annotated[Principal, Depends(current_principal)]) -> Response:
+        if not _is_relay(principal, relay_app):
             return JSONResponse({"error": RELAY_ONLY_MESSAGE}, status_code=403)
-        declared = request.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        raw = await _read_body(request)
+        if raw is None:
             return JSONResponse({"error": "request too large"}, status_code=413)
-        raw = await request.body()
-        if len(raw) > MAX_BODY_BYTES:
-            return JSONResponse({"error": "request too large"}, status_code=413)
-        try:
-            message = json.loads(raw)
-        except ValueError:
-            return _error(None, PARSE_ERROR, "parse error")
-        if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
-            return _error(None, INVALID_REQUEST, "not a JSON-RPC 2.0 request")
-        if "id" not in message:
-            return Response(status_code=202)  # notification: no answer
-        id_ = message["id"]
-        if isinstance(id_, bool) or not isinstance(id_, str | int | float):
-            return _error(None, INVALID_REQUEST, "id must be a string or a number")
-        method, params = message["method"], message.get("params")
-        if method == "initialize":
-            asked = params.get("protocolVersion") if isinstance(params, dict) else None
-            return _result(
-                id_,
-                {
-                    "protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
-                    "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": SERVER_NAME, "version": server_version},
-                },
-            )
-        if method == "tools/list":
-            return _result(id_, {"tools": [t.describe() for t in reg.tools()]})
-        if method == "tools/call":
-            return await _tools_call(id_, params, reg, principal)
-        return _error(id_, METHOD_NOT_FOUND, f"method not found: {method[:64]}")
+        message, early = _decode(raw)
+        if early is not None:
+            return early
+        return await _dispatch(message, reg, principal, server_version)
 
     return router

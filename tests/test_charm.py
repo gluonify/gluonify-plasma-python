@@ -52,8 +52,10 @@ def test_audience_list(charm: FakeCharm) -> None:
     ],
 )
 def test_refused_claims(charm: FakeCharm, kwargs: dict[str, Any], message: str) -> None:
+    check = verifier(charm)
+    signed = charm.token(**kwargs)
     with pytest.raises(InvalidTokenError, match=message):
-        verifier(charm).verify(charm.token(**kwargs))
+        check.verify(signed)
 
 
 def test_audience_and_issuer_checks_can_be_off(charm: FakeCharm) -> None:
@@ -68,29 +70,34 @@ def test_sub_is_required(charm: FakeCharm) -> None:
         algorithm="ES256",
         headers={"kid": "k1"},
     )
+    check = verifier(charm)
     with pytest.raises(InvalidTokenError, match="token refused"):
-        verifier(charm).verify(tok)
+        check.verify(tok)
 
 
 @pytest.mark.parametrize("bad", ["", "abc", "a.b", "a.b.c"])
 def test_not_a_jwt(charm: FakeCharm, bad: str) -> None:
+    check = verifier(charm)
     with pytest.raises(InvalidTokenError, match="not a JWT"):
-        verifier(charm).verify(bad)
+        check.verify(bad)
 
 
 def test_hs256_and_none_are_refused(charm: FakeCharm) -> None:
     hs = jwt.encode({"sub": "x"}, "k" * 32, algorithm="HS256")
+    check = verifier(charm)
     with pytest.raises(InvalidTokenError, match="ES256 only"):
-        verifier(charm).verify(hs)
+        check.verify(hs)
     none = jwt.encode({"sub": "x"}, None, algorithm="none")
     with pytest.raises(InvalidTokenError, match="ES256 only"):
-        verifier(charm).verify(none)
+        check.verify(none)
 
 
 def test_wrong_signature(charm: FakeCharm) -> None:
     other = FakeCharm()
+    check = verifier(charm)
+    signed = other.token()
     with pytest.raises(InvalidTokenError, match="InvalidSignatureError"):
-        verifier(charm).verify(other.token())
+        check.verify(signed)
 
 
 def test_jwks_is_cached_then_refreshed(charm: FakeCharm, clock: Any) -> None:
@@ -107,8 +114,9 @@ def test_key_rotation_refetches_at_most_every_30_seconds(charm: FakeCharm, clock
     v = verifier(charm, clock)
     v.verify(charm.token())
     charm.add_key("k2")
+    signed = charm.token(kid="k2")
     with pytest.raises(InvalidTokenError, match="unknown signing key"):
-        v.verify(charm.token(kid="k2"))  # fetched less than 30 s ago
+        v.verify(signed)  # fetched less than 30 s ago
     assert charm.fetches == 1
     clock.now += 31
     assert v.verify(charm.token(kid="k2")).subject == "ada"
@@ -125,8 +133,10 @@ def test_charm_outage_keeps_the_last_keys(charm: FakeCharm, clock: Any) -> None:
 
 def test_charm_unreachable_from_the_start(charm: FakeCharm) -> None:
     charm.down = True
+    check = verifier(charm)
+    signed = charm.token()
     with pytest.raises(InvalidTokenError, match="not reachable"):
-        verifier(charm).verify(charm.token())
+        check.verify(signed)
 
 
 def test_unusable_jwks_entries_are_skipped(charm: FakeCharm) -> None:
@@ -143,8 +153,9 @@ def test_unusable_jwks_entries_are_skipped(charm: FakeCharm) -> None:
     v = CharmVerifier("u", audience="gluonify-source", issuer=ISS, fetch=lambda _: doc)
     assert v.verify(charm.token()).subject == "ada"
     v2 = CharmVerifier("u", audience=None, fetch=lambda _: ["not", "a", "mapping"])  # type: ignore[arg-type,return-value]
+    signed = charm.token()
     with pytest.raises(InvalidTokenError, match="unknown signing key"):
-        v2.verify(charm.token())
+        v2.verify(signed)
 
 
 def test_from_env_on_the_platform(charm: FakeCharm) -> None:
@@ -172,8 +183,9 @@ def test_from_env_defaults_when_not_injected(charm: FakeCharm) -> None:
 
 
 def test_from_env_without_charm() -> None:
+    services = GluonifyServices({"GLUONIFY_ENVIRONMENT": "SBX"})
     with pytest.raises(GluonifyServicesError, match='did not grant the service "charm"'):
-        CharmVerifier.from_env(GluonifyServices({"GLUONIFY_ENVIRONMENT": "SBX"}), audience="a")
+        CharmVerifier.from_env(services, audience="a")
 
 
 def test_http_fetch_refuses_other_schemes() -> None:

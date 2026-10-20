@@ -66,6 +66,32 @@ def _name(dist_info: Path) -> str | None:
     return None
 
 
+def _read_entry_points(
+    d: Path, name: str, trusted: tuple[str, ...], sources: dict[str, set[str]], ignored: list[tuple[str, str, str]]
+) -> None:
+    """Reads the ``gluonify.services`` entry points of one distribution into ``sources`` and ``ignored``."""
+    ep = d / "entry_points.txt"
+    if not ep.is_file():
+        return
+    parser = configparser.ConfigParser(delimiters=("=",), interpolation=None)
+    parser.optionxform = str  # type: ignore[assignment,method-assign]
+    try:
+        parser.read_string(ep.read_text(encoding="utf-8"))
+    except configparser.Error:
+        ignored.append((name, "", "unreadable entry_points.txt"))
+        return
+    if not parser.has_section(GROUP):
+        return
+    dist = normalize(name)
+    for entry in parser.options(GROUP):
+        if not is_trusted(name, trusted):
+            ignored.append((dist, entry, "untrusted distribution"))
+        elif not _SERVICE.fullmatch(entry) or entry in _REFUSED:
+            ignored.append((dist, entry, "invalid service name"))
+        else:
+            sources.setdefault(entry, set()).add(dist)
+
+
 def infer(site_packages: Path, trusted: tuple[str, ...] = ("gluonify",)) -> Inference:
     """Reads the markers of the trusted distributions installed in ``site_packages``."""
     sources: dict[str, set[str]] = {}
@@ -77,26 +103,7 @@ def infer(site_packages: Path, trusted: tuple[str, ...] = ("gluonify",)) -> Infe
         client = CLIENTS.get(normalize(name))
         if client is not None:
             sources.setdefault(client, set()).add(normalize(name))
-        ep = d / "entry_points.txt"
-        if not ep.is_file():
-            continue
-        parser = configparser.ConfigParser(delimiters=("=",), interpolation=None)
-        parser.optionxform = str  # type: ignore[assignment,method-assign]
-        try:
-            parser.read_string(ep.read_text(encoding="utf-8"))
-        except configparser.Error:
-            ignored.append((name, "", "unreadable entry_points.txt"))
-            continue
-        if not parser.has_section(GROUP):
-            continue
-        dist = normalize(name)
-        for entry in parser.options(GROUP):
-            if not is_trusted(name, trusted):
-                ignored.append((dist, entry, "untrusted distribution"))
-            elif not _SERVICE.fullmatch(entry) or entry in _REFUSED:
-                ignored.append((dist, entry, "invalid service name"))
-            else:
-                sources.setdefault(entry, set()).add(dist)
+        _read_entry_points(d, name, trusted, sources, ignored)
     return Inference(
         tuple(sorted(sources)),
         {k: tuple(sorted(v)) for k, v in sorted(sources.items())},
