@@ -180,20 +180,28 @@ What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the
 ```python
 from gluonify.fermion import FermionNode, NodeCapacity, SkillFailure, SkillHandler, TaskContext, INTERRUPTED
 
+
 class Run(SkillHandler):
     action = "AGENT_RUN_L0_EDGE"
     requires = {"heavy": 1}
 
     async def handle(self, context: TaskContext):
-        await context.progress({"phase": "edit"})          # structured event, kept in fermion's timeline
+        await context.progress({"phase": "edit"})  # structured event, kept in fermion's timeline
         if context.cancelled.is_set():
             raise SkillFailure(INTERRUPTED, "stopped")
         return {"branch": "run/T-1/r-7"}
 
-node = FermionNode("https://fermion.lan", "superposition", "agent-mac", token=read_token,
-                   handlers=[Run()], capacity=NodeCapacity.of({"heavy": 1}, ["23:30-07:00"]))
-node.on_done(lambda correlation_id, payload: ...)        # end of a workflow this node started
-await node.run()                                          # until await node.stop()
+
+node = FermionNode(
+    "https://fermion.lan",
+    "superposition",
+    "agent-mac",
+    token=read_token,
+    handlers=[Run()],
+    capacity=NodeCapacity.of({"heavy": 1}, ["23:30-07:00"]),
+)
+node.on_done(lambda correlation_id, payload: ...)  # end of a workflow this node started
+await node.run()  # until await node.stop()
 ```
 
 | Item | Behaviour |
