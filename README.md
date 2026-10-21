@@ -167,7 +167,7 @@ charm = gluonify.charm
 
 1. After `pip install --require-hashes --no-deps -r <lock export>` into the venv of the build (runtime dependencies only, never the development group), Bup lists `<venv>/lib/python3.13/site-packages/*.dist-info/`. **Nothing is imported or executed**: only two text files are read.
 2. A distribution is **trusted** when the `Name` of its `METADATA`, normalised by PEP 503 (`[-_.]+` -> `-`, lower case), is `gluonify` or starts with `gluonify-` (setting `gluonify.bup.uses.trusted-python`, default `gluonify`; the counterpart of `gluonify.bup.uses.trusted-groups`). Names under that prefix are reserved on PyPI by the organisation, against typosquatting.
-3. In `entry_points.txt`, section `[gluonify.uses]`, each **entry name** is a service (`[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?`); the value (the module that reaches it) is informative, for the journal. An invalid name, `higgs`, or an entry of an untrusted distribution is ignored with a warning.
+3. In `entry_points.txt`, section `[gluonify.uses]`, each **entry name** is a service (`[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?`); the value (the module that reaches it) is informative, for the journal. An invalid name, `higgs`, `fermion` (granted only by the application's own `uses`), or an entry of an untrusted distribution is ignored with a warning.
 3 bis. **Known client distributions**: whatever their marker, a distribution whose normalised name is `neo4j` or `neomodel` infers **`gdown`** (`usesSources`: `{"gdown": ["neo4j"]}`). Only its `METADATA` is read; nothing is imported. The list lives in `gluonify.markers.CLIENTS`.
 4. **Merge**, as for Java: the declared services (request, else `gluonify.json`) as they are, then the inferred ones not declared, as **`?name`** (optional). Result fields `usesInferred`, `usesSources` (`{"charm": ["gluonify"], "gdown": ["neo4j"]}`), `usesEffective`.
 
@@ -204,7 +204,7 @@ await node.run()                                          # until await node.sto
 | starts | `await start_workflow(workflow, correlation_id, payload, global_transaction_id, organization)`; during an outage the frame waits in a queue of `queue_size` (100), `FermionQueueFullError` when full, replayed after `hello` |
 | `busy` | a handler may raise `SkillFailure(BUSY, …)`: fermion gives the task to another node without counting an attempt |
 
-**No `fermion` uses marker.** Unlike the Java `fermion-client` (a separate artifact that carries its marker), `gluonify.fermion` is part of the base distribution, and an extra adds dependencies, never markers (§8): a marker here would grant Fermion to every Python application. An application that is a Fermion node declares `"uses": ["fermion"]` in its appspec; a separate distribution with its own marker is a decision to take with the user (`plan.md`).
+**No `fermion` uses marker: the grant is explicit** (decision of the user, 2026-10-21). Unlike the Java `fermion-client` (a separate artifact that carries its marker), `gluonify.fermion` is part of the base distribution, and an extra adds dependencies, never markers (§8): a marker here would grant Fermion to every Python application. An application that is a Fermion node declares `"uses": ["fermion"]` in its appspec or `gluonify.json` (Bup keeps the declared services); `markers.infer` and Bup ignore a `fermion` marker from any distribution (`explicit uses only`).
 
 ## 8 bis. MCP tools of an application
 

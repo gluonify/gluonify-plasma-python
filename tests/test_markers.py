@@ -43,6 +43,7 @@ def test_infer_reads_trusted_distributions_only(tmp_path: Path) -> None:
     write_dist(tmp_path, "gluonify-bad", "[gluonify.uses]\nhiggs = a\nBad_Name = b\n")
     write_dist(tmp_path, "gluonify-noentry", None)
     write_dist(tmp_path, "gluonify-other", "[console_scripts]\na = b:c\n")
+    write_dist(tmp_path, "gluonify-fermion", "[gluonify.uses]\nfermion = gluonify.fermion\n")
     write_dist(tmp_path, "gluonify-broken", "not an ini file [\n")
     (tmp_path / "nometa-1.dist-info").mkdir()
     r = markers.infer(tmp_path)
@@ -54,6 +55,7 @@ def test_infer_reads_trusted_distributions_only(tmp_path: Path) -> None:
     assert ("gluonify-bad", "higgs", "invalid service name") in reasons
     assert ("gluonify-bad", "Bad_Name", "invalid service name") in reasons
     assert ("gluonify-broken", "", "unreadable entry_points.txt") in reasons
+    assert ("gluonify-fermion", "fermion", "explicit uses only") in reasons, "declared by the application, never inferred"
 
 
 def test_neo4j_and_neomodel_infer_gdown(tmp_path: Path) -> None:

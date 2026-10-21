@@ -4,9 +4,10 @@ Bup never imports anything: it reads, in the ``site-packages`` folder of the ven
 --require-hashes`` of the lock file, without the development dependencies), every ``*.dist-info`` folder whose
 distribution is trusted (``Name`` of ``METADATA`` = ``gluonify`` or ``gluonify-*`` after PEP 503 normalisation), and in
 its ``entry_points.txt`` the section ``[gluonify.uses]``: each entry name is a service. Invalid names and ``higgs`` are
-ignored. In addition, **any** installed distribution whose normalised name is a known client of a platform service
-infers that service (:data:`CLIENTS`: ``neo4j`` or ``neomodel`` -> ``gdown``). The services found are added to the
-declared ``uses`` as ``?name`` (optional).
+ignored, and so is ``fermion``: a Fermion grant is never inferred, the application declares ``"uses": ["fermion"]``
+itself (decision of the user, 2026-10-21). In addition, **any** installed distribution whose normalised name is a
+known client of a platform service infers that service (:data:`CLIENTS`: ``neo4j`` or ``neomodel`` -> ``gdown``).
+The services found are added to the declared ``uses`` as ``?name`` (optional).
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ GROUP = "gluonify.uses"
 MCP_GROUP = "gluonify.mcp"
 _SERVICE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _REFUSED = frozenset({"higgs"})
+_EXPLICIT = frozenset({"fermion"})
+"""Services granted only by the application's own ``uses`` (appspec or ``gluonify.json``), never by a marker."""
 
 CLIENTS: dict[str, str] = {"neo4j": "gdown", "neomodel": "gdown"}
 """Third-party distributions (PEP 503 names) that reach a platform service: their presence infers it."""
@@ -88,6 +91,8 @@ def _read_entry_points(
             ignored.append((dist, entry, "untrusted distribution"))
         elif not _SERVICE.fullmatch(entry) or entry in _REFUSED:
             ignored.append((dist, entry, "invalid service name"))
+        elif entry in _EXPLICIT:
+            ignored.append((dist, entry, "explicit uses only"))
         else:
             sources.setdefault(entry, set()).add(dist)
 
