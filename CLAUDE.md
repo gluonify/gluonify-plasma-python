@@ -17,4 +17,4 @@ Shared context for every gluonify-* repository (rules, conventions, Edge model):
 - Charm: ES256 only, `exp` and `sub` required. Do not loosen these.
 - `create_app` refuses a development identity on the platform (`GLUONIFY_ENVIRONMENT` set): keep it that way.
 - README "What is supported" matrix, the configuration table and `plan.md` are updated with every change.
-- Commit only on request; never push from an agent.
+- Commits and pushes follow the shared standing mandate (user decision 2026-10-21: no repository is reserved to the user's pushes): commit and push to `main` once the tests in scope, `ruff check .` and `ruff format --check .` pass.
