@@ -11,6 +11,7 @@ queue during an outage, and the node reconnects by itself.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -18,6 +19,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import MISSING, dataclass, field, fields
 from datetime import UTC, datetime, time, timedelta
 from typing import Any, ClassVar, Protocol
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 log = logging.getLogger(__name__)
@@ -487,7 +489,7 @@ def from_json(text: str | bytes) -> FermionMsg:
         kw = cls._kwargs(data)
         for f in fields(cls):
             # An absent field reads as Jackson does: false for a boolean, null otherwise.
-            kw.setdefault(f.name, f.default if f.default is not MISSING else (False if f.type == "bool" else None))
+            kw.setdefault(f.name, f.default if f.default is not MISSING else _absent(f.type))
         return cls(**kw)  # type: ignore[no-any-return]
     except (TypeError, ValueError, AttributeError) as e:
         raise FermionProtocolError(f"malformed {cls.T} frame: {e}") from e
@@ -541,7 +543,8 @@ class SkillHandler(ABC):
     async def handle(self, context: TaskContext) -> Mapping[str, Any] | None:
         """Runs the task; raise :class:`SkillFailure` for a failure with a kind."""
 
-    async def on_cancel(self, context: TaskContext, cancel: Cancel) -> None:  # noqa: B027 (a no-op default, as in Java)
+    # A no-op default, as in Java: a handler overrides it when it can stop its work.
+    async def on_cancel(self, context: TaskContext, cancel: Cancel) -> None:  # noqa: B027
         """Called when fermion cancels the running task; ``context.cancelled`` is already set. The default does nothing."""
 
     def descriptor(self) -> SkillDescriptor:
@@ -565,15 +568,47 @@ class FermionQueueFullError(RuntimeError):
     """The outage lasts and the queue of ``start`` frames is full."""
 
 
+def _absent(kind: object) -> bool | None:
+    """The value of an absent field, as Jackson reads it: false for a boolean, null otherwise."""
+    return False if kind == "bool" else None
+
+
+_SECURE = {"https": "wss", "wss": "wss"}
+_PLAIN = {"http": "ws", "ws": "ws"}
+
+
+def _internal(host: str) -> bool:
+    """Loopback, private or link-local address (the platform's internal network), or ``localhost``."""
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private or address.is_link_local
+
+
 def ws_url(base: str, app_id: str, node_id: str) -> str:
-    """The node URL: ``http(s)``/``ws(s)`` base without a path, then ``/ws/fermion/<app>-<node>``."""
-    root = base.rstrip("/")
-    for http, ws in (("https://", "wss://"), ("http://", "ws://")):
-        if root.startswith(http):
-            root = ws + root[len(http) :]
-    if not root.startswith(("ws://", "wss://")):
+    """The node URL: ``http(s)``/``ws(s)`` base without a path, then ``/ws/fermion/<app>-<node>``.
+
+    The token of the first frame must never travel in clear outside the platform's network: ``https``/``wss`` are always
+    accepted, ``http``/``ws`` only toward a loopback, private or link-local address (the internal service URLs the
+    platform injects, a laboratory, the tests); any other plaintext URL raises :class:`ValueError`.
+    """
+    parts = urlsplit(base.rstrip("/"))
+    scheme = parts.scheme.lower()
+    host = parts.hostname or ""
+    if scheme in _SECURE:
+        ws = _SECURE[scheme]
+    elif scheme in _PLAIN:
+        if not _internal(host):
+            raise ValueError(
+                f"fermion URL '{base}': plaintext is accepted only toward a loopback or private address, use https://"
+            )
+        ws = _PLAIN[scheme]
+    else:
         raise ValueError(f"fermion URL '{base}' is not http(s):// nor ws(s)://")
-    return f"{root}/ws/fermion/{app_id}-{node_id}"
+    return f"{ws}://{parts.netloc}{parts.path}/ws/fermion/{app_id}-{node_id}"
 
 
 Connector = Callable[[str], Any]
@@ -678,7 +713,7 @@ class FermionNode:
         ws = self._ws
         if ws is not None:
             await ws.close()
-        for task in list(self._tasks):
+        for task in self._tasks:
             task.cancel()
 
     async def run(self) -> None:

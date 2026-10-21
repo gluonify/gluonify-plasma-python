@@ -206,7 +206,7 @@ await node.run()  # until await node.stop()
 
 | Item | Behaviour |
 |---|---|
-| connection | `<url>/ws/fermion/<app>-<node>` (`http(s)` becomes `ws(s)`), first frame `auth` with `token()` (called at each connection; no token: no connection, retried), then `hello`; reconnection every `reconnect_interval` (10 s) |
+| connection | `<url>/ws/fermion/<app>-<node>` (`http(s)` becomes `ws(s)`; plaintext `http`/`ws` only toward a loopback, private or link-local address, the platform's internal network: any other plaintext URL is a `ValueError`, so the token never travels in clear outside it), first frame `auth` with `token()` (called at each connection; no token: no connection, retried), then `hello`; reconnection every `reconnect_interval` (10 s) |
 | tasks | each `command` runs in its own asyncio task; `SkillFailure(kind, message)` is a failure with that kind, any other exception a failure without kind; a heartbeat `progress` every `heartbeat_interval` (60 s, `0` disables) while the handler runs |
 | cancel | `cancel` sets `context.cancelled`, fills `context.cancel` and calls `on_cancel` (no-op by default); for a task that does not run here the node answers `interrupted` at once |
 | starts | `await start_workflow(workflow, correlation_id, payload, global_transaction_id, organization)`; during an outage the frame waits in a queue of `queue_size` (100), `FermionQueueFullError` when full, replayed after `hello` |

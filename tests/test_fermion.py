@@ -170,10 +170,20 @@ def test_a_window_uses_its_zone() -> None:
 
 def test_the_node_url_and_the_durations_follow_the_java_client() -> None:
     assert fermion.ws_url("https://fermion.lan/", "superposition", "mac") == "wss://fermion.lan/ws/fermion/superposition-mac"
-    assert fermion.ws_url("http://f:8080", "a", "0") == "ws://f:8080/ws/fermion/a-0"
-    assert fermion.ws_url("ws://f", "a", "0") == "ws://f/ws/fermion/a-0"
+    assert fermion.ws_url("http://10.0.0.5:8080", "a", "0") == "ws://10.0.0.5:8080/ws/fermion/a-0"
+    assert fermion.ws_url("ws://127.0.0.1", "a", "0") == "ws://127.0.0.1/ws/fermion/a-0"
+    assert fermion.ws_url("http://[::1]:9", "a", "0") == "ws://[::1]:9/ws/fermion/a-0"
+    assert fermion.ws_url("http://localhost:9/", "a", "0") == "ws://localhost:9/ws/fermion/a-0"
+    assert fermion.ws_url("http://169.254.1.2", "a", "0") == "ws://169.254.1.2/ws/fermion/a-0"
+    assert fermion.ws_url("WSS://fermion.example.org:443", "a", "0") == "wss://fermion.example.org:443/ws/fermion/a-0"
     with pytest.raises(ValueError, match="fermion URL"):
         fermion.ws_url("ftp://f", "a", "0")
+
+
+@pytest.mark.parametrize("url", ["http://fermion.example.org", "ws://f:8080", "http://8.8.8.8:80", "ws://fermion.lan"])
+def test_a_token_never_travels_in_clear_outside_the_internal_network(url: str) -> None:
+    with pytest.raises(ValueError, match="plaintext is accepted only"):
+        fermion.ws_url(url, "a", "0")
     assert fermion._iso(timedelta(hours=12)) == "PT12H"
     assert fermion._iso(timedelta(minutes=90, seconds=5)) == "PT1H30M5S"
     assert fermion._iso(timedelta(0)) == "PT0S"
