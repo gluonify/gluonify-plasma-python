@@ -15,10 +15,10 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.13"
       - name: Tests before publishing
@@ -34,7 +34,7 @@ jobs:
           test "$v" = "$tag" || { echo "gluonify is $v, tag is $tag"; exit 1; }
       - name: Build
         run: uv build --package gluonify -o dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -48,7 +48,7 @@ jobs:
     permissions:
       id-token: write   # OIDC token for Trusted Publishing; also used to sign the PEP 740 attestations
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/

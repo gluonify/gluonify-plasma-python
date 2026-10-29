@@ -1,6 +1,6 @@
 # plan.md: what is left to do (gluonify-plasma-python)
 
-1. **Publication** (user): environment `pypi` on GitHub, one pending trusted publisher for `gluonify` on PyPI (FastAPI is the extra `gluonify[fastapi]`), reservation of derived names (`gluonify-fastapi`, `gluonify-gdown`, …); first tag `v0.1.0` (README § 11).
+1. ~~**Publication**~~ done on 2026-10-29: environment `pypi` on GitHub (required reviewer, tags `v*`), trusted publisher `gluonify` on PyPI (organisation `gluonify`), derived names reserved by the user; `gluonify` 0.1.0 published from tag `v0.1.0` with its PEP 740 provenance (publisher GitHub `gluonify/gluonify-plasma-python`, `publish.yml`, environment `pypi`), checked by `pip download gluonify==0.1.0`.
 2. **Bup reads the Python markers** (`gluonify-bup`, framework `python`, python.md V3-2): `site-packages/*.dist-info/entry_points.txt`, section `[gluonify.uses]`, trusted names `gluonify`/`gluonify-*`, merge as `?name` (README § 8; reference reader `gluonify.markers.infer`).
 3. **gDown**: once the platform injects `GLUONIFY_GDOWN_BOLT_URL` and the CA, align the CA variable name (`GLUONIFY_GDOWN_CA_FILE`) in the README snippet and check it end to end; Bup reads `neo4j`/`neomodel` to infer `?gdown`.
 4. **`gdownDatabase` inferred** for Python (Java infers it from configuration references): a second entry point group, or a key in `[tool.gluonify]`.
