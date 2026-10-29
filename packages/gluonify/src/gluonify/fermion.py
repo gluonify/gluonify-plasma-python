@@ -5,7 +5,8 @@ discriminator, absent values left out, sorted slot maps), so the fixtures of ``g
 read and write back byte for byte in both languages. :class:`FermionNode` (extra ``gluonify[fermion]``, which adds ``websockets``)
 connects a Python process to gluonify-fermion as a node: ``auth`` then ``hello``, the tasks run concurrently with a heartbeat,
 ``cancel`` reaches the running handler, ``done`` and ``error`` reach the callbacks, ``start`` frames wait in a bounded
-queue during an outage, and the node reconnects by itself.
+queue during an outage, and the node reconnects by itself. A task's frames (``progress``, ``result``) go on the connection that is
+open when they are sent: a task that outlives its connection delivers them after the reconnection, never on the closed one.
 """
 
 from __future__ import annotations
@@ -655,6 +656,7 @@ class FermionNode:
         self._queue_size = queue_size
         self._connect = connector
         self._pending: list[Start] = []
+        self._outbox: list[FermionMsg] = []
         self._ws: Any = None
         self._running: dict[tuple[str, str | None], tuple[SkillHandler, TaskContext]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -673,6 +675,11 @@ class FermionNode:
     @property
     def pending_count(self) -> int:
         return len(self._pending)
+
+    @property
+    def outbox_count(self) -> int:
+        """The task frames (``progress``, ``result``) waiting for a connection."""
+        return len(self._outbox)
 
     def on_done(self, callback: Callable[[str, dict[str, Any]], Any] | None) -> None:
         """Callback (correlation id, final variables) of a submitted workflow's successful end; may be a coroutine function."""
@@ -745,6 +752,9 @@ class FermionNode:
         while self._pending:
             await ws.send(to_json(self._pending[0]))
             self._pending.pop(0)
+        while self._outbox:
+            await ws.send(to_json(self._outbox[0]))
+            self._outbox.pop(0)
         async for raw in ws:
             await self._receive(raw, ws)
 
@@ -756,7 +766,7 @@ class FermionNode:
             return
         match msg:
             case Command():
-                task = asyncio.create_task(self._execute(msg, ws))
+                task = asyncio.create_task(self._execute(msg))
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
             case Cancel():
@@ -768,13 +778,29 @@ class FermionNode:
             case _:
                 log.warning("fermion-node=unexpected frame type=%s", msg.T)
 
-    async def _execute(self, command: Command, ws: Any) -> None:
-        async def send(msg: FermionMsg) -> None:
-            await ws.send(to_json(msg))
+    async def _deliver(self, msg: FermionMsg) -> None:
+        """Sends a task's frame on the current connection, never on the one the command came by (closed when fermion
+        restarted while the task ran). Without a connection, or when the send fails, the frame waits in the outbox, sent
+        after the next ``auth`` and ``hello``; a full outbox drops its oldest ``progress`` first, so that a ``result`` is
+        the last frame to be lost."""
+        ws = self._ws
+        if ws is not None and not self._outbox:
+            try:
+                await ws.send(to_json(msg))
+                return
+            except Exception as e:
+                log.warning("fermion-node=send type=%s error=%s, kept until the reconnection", msg.T, e)
+        if len(self._outbox) >= self._queue_size:
+            dropped = next((m for m in self._outbox if isinstance(m, Progress)), self._outbox[0])
+            self._outbox.remove(dropped)
+            log.warning("fermion-node=outbox full: a %s frame dropped", dropped.T)
+        self._outbox.append(msg)
 
+    async def _execute(self, command: Command) -> None:
+        send = self._deliver
         handler = self._handlers.get(command.action)
         if handler is None:
-            await _safe(send, Result.failure(command, f"No handler for action {command.action}", "NO_HANDLER"))
+            await send(Result.failure(command, f"No handler for action {command.action}", "NO_HANDLER"))
             return
         context = TaskContext(command, send)
         key = (command.correlation_id, command.step_id)
@@ -794,12 +820,12 @@ class FermionNode:
             if beat is not None:
                 beat.cancel()
             self._running.pop(key, None)
-        await _safe(send, result)
+        await send(result)
 
     async def _beat(self, command: Command, send: Callable[[FermionMsg], Awaitable[None]]) -> None:
         while True:
             await asyncio.sleep(self._heartbeat)
-            await _safe(send, Progress.of(command))
+            await send(Progress.of(command))
 
     async def _cancel(self, cancel: Cancel, ws: Any) -> None:
         found = self._running.get((cancel.correlation_id, cancel.step_id))

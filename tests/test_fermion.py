@@ -450,6 +450,64 @@ def test_starts_are_sent_queued_during_an_outage_replayed_and_bounded() -> None:
     play(outage)
 
 
+class Slow(SkillHandler):
+    """Reports a phase, waits for :attr:`go`, reports again, then answers: a task that outlives its connection."""
+
+    action = "SLOW"
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.go = asyncio.Event()
+
+    async def handle(self, context: TaskContext) -> Mapping[str, Any] | None:
+        await context.progress({"phase": "read"})
+        self.started.set()
+        await self.go.wait()
+        await context.progress({"phase": "write"})
+        return {"text": "done"}
+
+
+def test_a_task_that_outlives_its_connection_delivers_on_the_next_one() -> None:
+    async def scenario() -> None:
+        server = FakeFermion()
+        slow = Slow()
+        async with running(server, [slow], heartbeat_interval=0) as node:
+            await until(lambda: node.connected, "connected")
+            await server.send(Command("r6", "g", "SLOW", {}, "Task_Slow"))
+            await asyncio.wait_for(slow.started.wait(), 5)
+            sessions = server.sessions
+            await server.cut()
+            await until(lambda: not node.connected, "disconnected")
+            slow.go.set()
+            await until(lambda: server.sessions > sessions, "reconnected")
+            await until(lambda: bool(server.of(Result)), "the result on the new connection")
+            assert server.of(Result)[0].payload == {"text": "done"}
+            assert [p.data for p in server.of(Progress)] == [{"phase": "read"}, {"phase": "write"}]
+            assert node.outbox_count == 0
+
+    play(scenario)
+
+    async def outage() -> None:
+        node = FermionNode("http://127.0.0.1:9", "a", "0", lambda: "t", queue_size=2)
+        command = Command("c", None, RUN)
+
+        class Broken:
+            async def send(self, message: str) -> None:
+                raise ConnectionError("gone")
+
+        node._ws = Broken()
+        await node._deliver(Progress.of(command, None, {"phase": "a"}))
+        node._ws = None
+        await node._deliver(Result.ok(command, {}))
+        await node._deliver(Result.ok(command, {"n": 2}))
+        assert node.outbox_count == 2, "a full outbox drops its oldest progress first"
+        assert all(isinstance(m, Result) for m in node._outbox)
+        await node._deliver(Result.ok(command, {"n": 3}))
+        assert [m.payload for m in node._outbox] == [{"n": 2}, {"n": 3}]
+
+    play(outage)
+
+
 def test_queued_starts_are_replayed_after_auth_and_hello() -> None:
     async def scenario() -> None:
         server = FakeFermion()
