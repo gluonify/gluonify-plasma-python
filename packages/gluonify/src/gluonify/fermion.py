@@ -23,6 +23,8 @@ from typing import Any, ClassVar, Protocol
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .tls import client_context
+
 log = logging.getLogger(__name__)
 
 PROTOCOL = 1
@@ -621,6 +623,8 @@ def _websockets_connect(url: str) -> Any:
         from websockets.asyncio.client import connect
     except ImportError as e:  # pragma: no cover - depends on the installed extra
         raise ImportError('FermionNode needs the extra: pip install "gluonify[fermion]"') from e
+    if url.startswith("wss://"):
+        return connect(url, max_size=80 * 1024 * 1024, ping_interval=20, ssl=client_context())
     return connect(url, max_size=80 * 1024 * 1024, ping_interval=20)
 
 

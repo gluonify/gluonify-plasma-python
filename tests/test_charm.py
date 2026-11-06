@@ -206,7 +206,7 @@ def test_http_fetch_reads_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
     seen: dict[str, Any] = {}
 
-    def urlopen(req: Any, timeout: float) -> Response:
+    def urlopen(req: Any, timeout: float, context: Any = None) -> Response:
         seen["url"], seen["timeout"] = req.full_url, timeout
         return Response()
 

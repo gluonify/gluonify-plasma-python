@@ -24,6 +24,7 @@ from typing import Any, cast
 import jwt
 
 from .services import GluonifyServices, GluonifyServicesError, defaults
+from .tls import client_context
 
 __all__ = [
     "CERTS_PATH",
@@ -66,7 +67,8 @@ def _http_fetch(url: str) -> Mapping[str, Any]:
     if not url.startswith(("https://", "http://")):
         raise GluonifyServicesError(f"the JWKS address must be http(s): {url}")
     req = urllib.request.Request(url, headers={"Accept": "application/json"})  # noqa: S310 (scheme checked above)
-    with urllib.request.urlopen(req, timeout=5) as r:  # noqa: S310
+    context = client_context() if url.startswith("https://") else None
+    with urllib.request.urlopen(req, timeout=5, context=context) as r:  # noqa: S310
         data: Mapping[str, Any] = json.loads(r.read().decode("utf-8"))
     return data
 

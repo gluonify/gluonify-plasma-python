@@ -293,6 +293,7 @@ There is nothing to configure on the platform. Variables read:
 | `GLUONIFY_<APP>_TOKEN_FILE` / `GLUONIFY_<APP>_TOKEN` | services | application token (file re-read at every call) / fixed token |
 | `GLUONIFY_REPLICA`, `GLUONIFY_SELF_URL`, `GLUONIFY_NODE_ADDRESS` | services | instance information |
 | `GLUONIFY_OIDC_ISSUER`, `GLUONIFY_OIDC_AUDIENCE` | Charm | expected issuer and audience |
+| `GLUONIFY_CA_FILE` (alias `GLUONIFY_GDOWN_CA_FILE`) | `gluonify.tls.client_context()`: Charm JWKS, Fermion `wss://` | PEM root of the cluster's internal authority, trusted in addition to the system's; absent or unusable: the default context (logged once) |
 | `APP_<KEY>`, `<KEY>` | Top | configuration and secrets |
 | `PORT` | `serve` | listening port (default 8080), host always `0.0.0.0` |
 
