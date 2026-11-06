@@ -39,7 +39,7 @@ def client_context(environ: Mapping[str, str] | None = None) -> ssl.SSLContext:
     if path is not None:
         try:
             context.load_verify_locations(cafile=path)
-        except (ssl.SSLError, OSError) as e:
+        except OSError as e:  # ssl.SSLError is an OSError
             _warn(path, type(e).__name__)
             return ssl.create_default_context()
     return context
