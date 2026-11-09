@@ -45,6 +45,9 @@ charm = "gluonify.charm"
 [project.entry-points."gluonify.mcp"]
 mcp = "gluonify.fastapi.mcp"
 
+[project.entry-points."gluonify.tls"]
+tls = "gluonify.tls"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"

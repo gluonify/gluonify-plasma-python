@@ -296,6 +296,7 @@ There is nothing to configure on the platform. Variables read:
 | `GLUONIFY_CA_FILE` (alias `GLUONIFY_GDOWN_CA_FILE`) | `gluonify.tls.client_context()`: Charm JWKS, Fermion `wss://` | PEM root of the cluster's internal authority, trusted in addition to the system's; absent or unusable: the default context (logged once) |
 | `APP_<KEY>`, `<KEY>` | Top | configuration and secrets |
 | `PORT` | `serve` | listening port (default 8080), host always `0.0.0.0` |
+| `GLUONIFY_TLS_CERTIFICATE_PEM` / `GLUONIFY_TLS_PRIVATE_KEY_PEM` | `serve` (`gluonify.tls.server_context()`) | the port's certificate and key, issued by the cluster's internal authority when the specification sets `tls: true` (internal TLS stage 2: the application opts in with `"tls": true` in `gluonify.json`; Bup checks the entry point `[gluonify.tls] tls` of this distribution); with them the port serves HTTPS only (TLS 1.2 at least); half a pair or a value that is neither PEM nor its base64 stops the start. The key reaches `ssl` through an anonymous memory file on Linux (`memfd`), never a disk; on macOS and Windows (development) through an owner-only temporary file removed at once |
 
 ## 10. Development
 

@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException
 
 from gluonify import CharmVerifier, GluonifyServices, Principal, Top, defaults
+from gluonify.tls import server_context
 
 from .auth import GluonifyAuth
 from .health import Health
@@ -120,8 +121,17 @@ def create_app(
 
 
 def serve(app: FastAPI, *, port: int | None = None) -> None:  # pragma: no cover - starts a server
-    """Runs the application with uvicorn, one process (the platform runs one per instance), on ``0.0.0.0:$PORT``."""
+    """Runs the application with uvicorn, one process (the platform runs one per instance), on ``0.0.0.0:$PORT``.
+
+    With the platform's TLS pair (``tls: true`` in the specification, :func:`gluonify.tls.server_context`), the port
+    serves HTTPS only.
+    """
     import uvicorn
 
     p = port if port is not None else int(os.environ.get(PORT_ENV, str(DEFAULT_PORT)))
-    uvicorn.run(app, host="0.0.0.0", port=p, proxy_headers=True, forwarded_allow_ips="*")  # noqa: S104 (rule R-ECOUTE)
+    config = uvicorn.Config(app, host="0.0.0.0", port=p, proxy_headers=True, forwarded_allow_ips="*")  # noqa: S104 (rule R-ECOUTE)
+    context = server_context()
+    if context is not None:
+        config.load()
+        config.ssl = context  # uvicorn only loads files: the context built from the pair replaces its own
+    uvicorn.Server(config).run()

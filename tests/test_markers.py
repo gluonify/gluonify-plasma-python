@@ -31,6 +31,8 @@ def test_installed_metadata_carries_the_markers() -> None:
     eps = {(ep.name, ep.value, ep.dist.name if ep.dist else None) for ep in metadata.entry_points(group="gluonify.uses")}
     assert ("charm", "gluonify.charm", "gluonify") in eps
     assert not any(name == "gdown" for name, _, _ in eps)
+    tls = {(ep.name, ep.value) for ep in metadata.entry_points(group="gluonify.tls")}
+    assert ("tls", "gluonify.tls") in tls, "the server TLS capability Bup reads"
 
 
 def test_infer_reads_trusted_distributions_only(tmp_path: Path) -> None:
