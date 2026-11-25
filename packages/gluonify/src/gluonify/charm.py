@@ -2,8 +2,10 @@
 
 Zero configuration on the platform (``"uses": ["charm"]``, inferred from the marker of this module):
 
-* JWKS: ``GLUONIFY_SERVICE_CHARM_URL`` + ``/realms/gluonify/protocol/openid-connect/certs``;
-* issuer: ``GLUONIFY_OIDC_ISSUER`` (the stable ``https://id.<zone>/realms/gluonify``, not the internal address);
+* realm: ``GLUONIFY_OIDC_REALM`` (``org-<org>`` for an application of an organization, injected by Higgs), ``gluonify``
+  when absent or empty; any other value than ``gluonify`` or ``org-<org>`` (what Charm serves) is a configuration error;
+* JWKS: ``GLUONIFY_SERVICE_CHARM_URL`` + ``/realms/<realm>/protocol/openid-connect/certs``;
+* issuer: ``GLUONIFY_OIDC_ISSUER`` (the stable public ``https://id.<zone>/realms/<realm>``, not the internal address);
 * audience: ``GLUONIFY_OIDC_AUDIENCE`` (``gluonify-<app>``, injected by Higgs with the sign-in client of the application);
 * roles: the ``roles`` claim.
 
@@ -14,6 +16,7 @@ The JWKS is kept 5 minutes and fetched again at once for an unknown ``kid`` (key
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import urllib.request
@@ -28,13 +31,23 @@ from .tls import client_context
 
 __all__ = [
     "CERTS_PATH",
+    "ENV_REALM",
+    "PLATFORM_REALM",
     "CharmVerifier",
     "InvalidTokenError",
     "Principal",
+    "certs_path",
 ]
 
 CERTS_PATH = "/realms/gluonify/protocol/openid-connect/certs"
+"""The JWKS path of the platform realm (``certs_path(PLATFORM_REALM)``)."""
+PLATFORM_REALM = "gluonify"
+ENV_REALM = "GLUONIFY_OIDC_REALM"
 ALGORITHMS = ("ES256",)
+
+# The realms Charm serves: the platform's, and org-<org> with <org> a DNS label of 1 to 40 characters
+# (gluonify-charm RealmOidcResource path template, gluonify-plasma Organizations.PATTERN).
+_REALM = re.compile(r"gluonify|org-[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")
 
 JwksFetcher = Callable[[str], Mapping[str, Any]]
 
@@ -61,6 +74,17 @@ class Principal:
     def organization(self) -> str | None:
         org = self.claims.get("org")
         return org if isinstance(org, str) else None
+
+
+def certs_path(realm: str = PLATFORM_REALM) -> str:
+    """The JWKS path of a realm: ``/realms/<realm>/protocol/openid-connect/certs``.
+
+    :param realm: ``gluonify`` or ``org-<org>``, the realms Charm serves
+    :raises ValueError: when the name is not one of them (checked before it goes into a URL path)
+    """
+    if not _REALM.fullmatch(realm):
+        raise ValueError("not a realm Charm serves (gluonify or org-<organization>)")
+    return f"/realms/{realm}/protocol/openid-connect/certs"
 
 
 def _http_fetch(url: str) -> Mapping[str, Any]:
@@ -117,16 +141,22 @@ class CharmVerifier:
         fetch: JwksFetcher | None = None,
         clock: Callable[[], float] = time.time,
     ) -> CharmVerifier:
-        """The verifier of the platform: Charm resolved through ``services``, issuer and audience from the environment.
+        """The verifier of the platform: Charm resolved through ``services``; realm, issuer and audience from the environment.
 
-        ``audience`` and ``issuer`` are defaults used when the platform does not inject them.
+        The keys are those of the realm ``GLUONIFY_OIDC_REALM`` (``gluonify`` when absent or empty). ``audience`` and
+        ``issuer`` are defaults used when the platform does not inject them.
 
-        :raises GluonifyServicesError: when Charm cannot be resolved
+        :raises GluonifyServicesError: when Charm cannot be resolved or ``GLUONIFY_OIDC_REALM`` is not a realm Charm serves
         """
         s = services or defaults()
+        realm = s.env(ENV_REALM) or PLATFORM_REALM
+        try:
+            path = certs_path(realm)
+        except ValueError as e:
+            raise GluonifyServicesError(f"{ENV_REALM} is not a realm Charm serves (gluonify or org-<organization>)") from e
         charm = s.resolve("charm")
         return cls(
-            charm.resolve(CERTS_PATH),
+            charm.resolve(path),
             audience=s.env("GLUONIFY_OIDC_AUDIENCE") or audience,
             issuer=s.env("GLUONIFY_OIDC_ISSUER") or issuer,
             fetch=fetch,

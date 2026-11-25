@@ -39,6 +39,7 @@ The starter application that uses it is [`gluonify-source-python`](https://githu
 | Platform variables (`GLUONIFY_ENVIRONMENT`, `GLUONIFY_REPLICA`, `GLUONIFY_SELF_URL`, `GLUONIFY_NODE_ADDRESS`) | ✅ | |
 | Developer machine (`gluonify login <zone>`, `~/.gluonify`, discovery document `/.well-known/gluonify`, developer token refresh) | ❌ | Java only for now; off the platform, set `GLUONIFY_SERVICE_<APP>_URL` (and a token) by hand |
 | Charm: verification of incoming JWT (ES256 only, `aud`, `iss`, `exp`, `sub`, `roles`) | ✅ | JWKS kept 5 min, refetched for an unknown `kid` (30 s at most), last keys kept during a Charm outage |
+| Charm: realm of an organization (`GLUONIFY_OIDC_REALM=org-<org>`, injected by Higgs: the keys of that realm) | ✅ unit tests | absent or empty: the platform realm `gluonify`; anything but `gluonify` or `org-<org>` stops `from_env` (`GluonifyServicesError`), never a silent fallback; not yet checked end to end with a Python application of an organization |
 | Charm: issuing tokens, OIDC sign-in of a browser (authorization code + PKCE) | ❌ | the browser side is the `@gluonify/ui` kit; a Python app only verifies |
 | Top: configuration and secrets injected by the node agent (`APP_<KEY>` with `"top": true`, `<KEY>` with a literal `topNamespace`) | ✅ | no network call: Strange writes the keys into the environment before the start |
 | Top: reading the vault at run time (HTTP API) | ❌ | not needed by applications; values change at the next start |
@@ -90,7 +91,7 @@ if __name__ == "__main__":
 
 ## 4. Charm: incoming tokens
 
-`CharmVerifier.from_env(audience="gluonify-shop")` builds the verifier of the platform: JWKS at `GLUONIFY_SERVICE_CHARM_URL` + `/realms/gluonify/protocol/openid-connect/certs`, issuer `GLUONIFY_OIDC_ISSUER`, audience `GLUONIFY_OIDC_AUDIENCE` (injected by Higgs with the sign-in client of the application; the `audience` argument is only the default). `verify(token)` returns a `Principal` (`subject`, `roles`, `claims`, `organization`) or raises `InvalidTokenError`. Only **ES256** is accepted (`none`, `HS256` refused), `exp` and `sub` are required, 30 s of leeway.
+`CharmVerifier.from_env(audience="gluonify-shop")` builds the verifier of the platform: JWKS at `GLUONIFY_SERVICE_CHARM_URL` + `/realms/<realm>/protocol/openid-connect/certs` (`charm.certs_path(realm)`), where the realm is `GLUONIFY_OIDC_REALM` (`org-<org>` for an application of an organization, injected by Higgs; `gluonify` when absent or empty; any other name than `gluonify` or `org-<org>`, the realms Charm serves, raises `GluonifyServicesError`), issuer `GLUONIFY_OIDC_ISSUER`, audience `GLUONIFY_OIDC_AUDIENCE` (injected by Higgs with the sign-in client of the application; the `audience` argument is only the default). `verify(token)` returns a `Principal` (`subject`, `roles`, `claims`, `organization`) or raises `InvalidTokenError`. Only **ES256** is accepted (`none`, `HS256` refused), `exp` and `sub` are required, 30 s of leeway.
 
 ## 5. Top: configuration and secrets
 
@@ -293,6 +294,7 @@ There is nothing to configure on the platform. Variables read:
 | `GLUONIFY_<APP>_TOKEN_FILE` / `GLUONIFY_<APP>_TOKEN` | services | application token (file re-read at every call) / fixed token |
 | `GLUONIFY_REPLICA`, `GLUONIFY_SELF_URL`, `GLUONIFY_NODE_ADDRESS` | services | instance information |
 | `GLUONIFY_OIDC_ISSUER`, `GLUONIFY_OIDC_AUDIENCE` | Charm | expected issuer and audience |
+| `GLUONIFY_OIDC_REALM` | Charm | realm whose keys verify the tokens: `org-<org>` (injected by Higgs for an application of an organization), `gluonify` when absent or empty; another value stops `CharmVerifier.from_env` |
 | `GLUONIFY_CA_FILE` (alias `GLUONIFY_GDOWN_CA_FILE`) | `gluonify.tls.client_context()`: Charm JWKS, Fermion `wss://` | PEM root of the cluster's internal authority, trusted in addition to the system's; absent or unusable: the default context (logged once) |
 | `APP_<KEY>`, `<KEY>` | Top | configuration and secrets |
 | `PORT` | `serve` | listening port (default 8080), host always `0.0.0.0` |

@@ -128,6 +128,12 @@ def test_default_auth_uses_the_environment(charm: FakeCharm, monkeypatch: pytest
     assert app.state.gluonify_auth.sign_in_required
 
 
+def test_default_auth_reads_the_realm_of_the_organization() -> None:
+    env = {"GLUONIFY_ENVIRONMENT": "SBX", "GLUONIFY_SERVICE_CHARM_URL": "http://charm", "GLUONIFY_OIDC_REALM": "org-acme"}
+    app = create_app("x", audience="gluonify-source", services=GluonifyServices(env))
+    assert app.state.gluonify_auth.verifier().jwks_url == "http://charm/realms/org-acme/protocol/openid-connect/certs"
+
+
 def test_not_created_by_the_factory() -> None:
     app = FastAPI()
 

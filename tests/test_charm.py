@@ -182,6 +182,135 @@ def test_from_env_defaults_when_not_injected(charm: FakeCharm) -> None:
     assert v.issuer == "x"
 
 
+ORG_ISS = "https://id.gluonify.lan/realms/org-acme"
+PLATFORM_CERTS = "http://charm.internal:8080/realms/gluonify/protocol/openid-connect/certs"
+ORG_CERTS = "http://charm.internal:8080/realms/org-acme/protocol/openid-connect/certs"
+
+
+def platform_env(**extra: str) -> GluonifyServices:
+    return GluonifyServices(
+        {
+            "GLUONIFY_ENVIRONMENT": "SBX",
+            "GLUONIFY_SERVICE_CHARM_URL": "http://charm.internal:8080",
+            "GLUONIFY_OIDC_AUDIENCE": "gluonify-shop",
+            **extra,
+        }
+    )
+
+
+def test_certs_path_of_the_platform_and_of_an_organization() -> None:
+    assert charm_module.certs_path() == charm_module.CERTS_PATH
+    assert charm_module.certs_path("gluonify") == "/realms/gluonify/protocol/openid-connect/certs"
+    assert charm_module.certs_path("org-acme") == "/realms/org-acme/protocol/openid-connect/certs"
+    assert charm_module.certs_path("org-" + "a" * 40) == "/realms/org-" + "a" * 40 + "/protocol/openid-connect/certs"
+    assert charm_module.certs_path("org-0") == "/realms/org-0/protocol/openid-connect/certs"
+
+
+INVALID_REALMS = [
+    "org-acme/../gluonify",
+    "../gluonify",
+    "..",
+    "org-acme/",
+    "/org-acme",
+    "org-acme\\x",
+    "org-ac me",
+    " org-acme",
+    "gluonify ",
+    "org-acme\n",
+    "Org-Acme",
+    "ORG-ACME",
+    "GLUONIFY",
+    "org-" + "a" * 41,
+    "x" * 64,
+    "org-acme%2F..",
+    "org-acme%2e%2e",
+    "%67luonify",
+    "org-acme?x=1",
+    "org-acme#x",
+    "org-",
+    "org--acme",
+    "org-acme-",
+    "org-ac_me",
+    "org-ac.me",
+    "master",
+    "acme",
+    "gluonify2",
+    "org-acme\x00",
+]
+
+
+@pytest.mark.parametrize("realm", INVALID_REALMS)
+def test_certs_path_refuses_what_charm_does_not_serve(realm: str) -> None:
+    with pytest.raises(ValueError, match="not a realm Charm serves"):
+        charm_module.certs_path(realm)
+
+
+@pytest.mark.parametrize("realm", [None, "", "  "])
+def test_from_env_reads_the_platform_realm_when_none_is_injected(charm: FakeCharm, realm: str | None) -> None:
+    extra = {} if realm is None else {"GLUONIFY_OIDC_REALM": realm}
+    v = CharmVerifier.from_env(platform_env(GLUONIFY_OIDC_ISSUER=ISS, **extra), fetch=charm.jwks)
+    assert v.jwks_url == PLATFORM_CERTS
+    assert v.verify(charm.token(aud="gluonify-shop")).subject == "ada"
+    assert charm.last_url == PLATFORM_CERTS
+
+
+def test_from_env_reads_the_keys_of_the_organization_realm() -> None:
+    platform, org = FakeCharm(kid="platform-k1"), FakeCharm(kid="org-acme-k1")
+    realms = {PLATFORM_CERTS: platform, ORG_CERTS: org}
+    fetched: list[str] = []
+
+    def fetch(url: str) -> dict[str, Any]:
+        fetched.append(url)
+        return realms[url].jwks(url)
+
+    s = platform_env(GLUONIFY_OIDC_REALM="org-acme", GLUONIFY_OIDC_ISSUER=ORG_ISS)
+    v = CharmVerifier.from_env(s, fetch=fetch)
+    assert v.jwks_url == ORG_CERTS
+    assert v.issuer == ORG_ISS
+    p = v.verify(org.token(aud="gluonify-shop", iss=ORG_ISS, org="acme"))
+    assert (p.subject, p.organization) == ("ada", "acme")
+    assert set(fetched) == {ORG_CERTS}
+
+
+def test_organization_realm_refuses_a_token_of_the_platform_realm() -> None:
+    platform, org = FakeCharm(kid="platform-k1"), FakeCharm(kid="org-acme-k1")
+    s = platform_env(GLUONIFY_OIDC_REALM="org-acme", GLUONIFY_OIDC_ISSUER=ORG_ISS)
+    v = CharmVerifier.from_env(s, fetch=org.jwks)
+    with pytest.raises(InvalidTokenError, match="unknown signing key"):
+        v.verify(platform.token(aud="gluonify-shop", iss=ISS))
+    with pytest.raises(InvalidTokenError, match="issuer"):
+        v.verify(org.token(aud="gluonify-shop", iss=ISS))  # the realm's key, but the platform's issuer
+
+
+def test_organization_realm_refuses_a_token_of_another_organization() -> None:
+    acme, globex = FakeCharm(kid="org-acme-k1"), FakeCharm(kid="org-acme-k1")  # same kid, other keys
+    s = platform_env(GLUONIFY_OIDC_REALM="org-acme", GLUONIFY_OIDC_ISSUER=ORG_ISS)
+    v = CharmVerifier.from_env(s, fetch=acme.jwks)
+    with pytest.raises(InvalidTokenError, match="InvalidSignatureError"):
+        v.verify(globex.token(aud="gluonify-shop", iss=ORG_ISS))
+
+
+@pytest.mark.parametrize("realm", INVALID_REALMS)
+def test_from_env_refuses_an_invalid_realm_without_building_a_url(realm: str) -> None:
+    fetched: list[str] = []
+
+    def fetch(url: str) -> dict[str, Any]:
+        fetched.append(url)
+        return {"keys": []}
+
+    s = platform_env(GLUONIFY_OIDC_REALM=realm, GLUONIFY_OIDC_ISSUER=ORG_ISS)
+    with pytest.raises(GluonifyServicesError) as e:
+        CharmVerifier.from_env(s, fetch=fetch)
+    assert str(e.value) == "GLUONIFY_OIDC_REALM is not a realm Charm serves (gluonify or org-<organization>)"  # never the value
+    assert fetched == []
+
+
+def test_from_env_never_falls_back_to_the_platform_realm_off_the_platform() -> None:
+    s = GluonifyServices({"GLUONIFY_SERVICE_CHARM_URL": "http://localhost:8180", "GLUONIFY_OIDC_REALM": "org-Acme"})
+    with pytest.raises(GluonifyServicesError, match="GLUONIFY_OIDC_REALM"):
+        CharmVerifier.from_env(s, audience="a")
+
+
 def test_from_env_without_charm() -> None:
     services = GluonifyServices({"GLUONIFY_ENVIRONMENT": "SBX"})
     with pytest.raises(GluonifyServicesError, match='did not grant the service "charm"'):
