@@ -276,18 +276,21 @@ def test_organization_realm_refuses_a_token_of_the_platform_realm() -> None:
     platform, org = FakeCharm(kid="platform-k1"), FakeCharm(kid="org-acme-k1")
     s = platform_env(GLUONIFY_OIDC_REALM="org-acme", GLUONIFY_OIDC_ISSUER=ORG_ISS)
     v = CharmVerifier.from_env(s, fetch=org.jwks)
+    of_platform = platform.token(aud="gluonify-shop", iss=ISS)
+    with_platform_issuer = org.token(aud="gluonify-shop", iss=ISS)  # the realm's key, but the platform's issuer
     with pytest.raises(InvalidTokenError, match="unknown signing key"):
-        v.verify(platform.token(aud="gluonify-shop", iss=ISS))
+        v.verify(of_platform)
     with pytest.raises(InvalidTokenError, match="issuer"):
-        v.verify(org.token(aud="gluonify-shop", iss=ISS))  # the realm's key, but the platform's issuer
+        v.verify(with_platform_issuer)
 
 
 def test_organization_realm_refuses_a_token_of_another_organization() -> None:
     acme, globex = FakeCharm(kid="org-acme-k1"), FakeCharm(kid="org-acme-k1")  # same kid, other keys
     s = platform_env(GLUONIFY_OIDC_REALM="org-acme", GLUONIFY_OIDC_ISSUER=ORG_ISS)
     v = CharmVerifier.from_env(s, fetch=acme.jwks)
+    of_globex = globex.token(aud="gluonify-shop", iss=ORG_ISS)
     with pytest.raises(InvalidTokenError, match="InvalidSignatureError"):
-        v.verify(globex.token(aud="gluonify-shop", iss=ORG_ISS))
+        v.verify(of_globex)
 
 
 @pytest.mark.parametrize("realm", INVALID_REALMS)
