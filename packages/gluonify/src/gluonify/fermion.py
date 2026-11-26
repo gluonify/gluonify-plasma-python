@@ -638,6 +638,60 @@ Connector = Callable[[str], Any]
 """Opens a WebSocket: returns an async context manager yielding an object with ``send``, ``close`` and async iteration."""
 
 
+_MATRIX_PARTS = 3
+_MATRIX_MAX_DIGITS = 4
+
+
+def _matrix_release(text: str) -> str | None:
+    """The canonical form of a release version, ``None`` for any other text.
+
+    A release version is three dotted numbers of one to four ASCII digits, surrounding blanks ignored; the canonical form drops
+    leading zeros (``01.2.3`` is ``1.2.3``, the form gluonify-fermion records). Kept in step with gluonify-fermion's
+    ``io.gluonify.fermion.defaults.BundleVersion`` (the bundle manifest's release form) and with gluonify-plasma's
+    ``io.gluonify.plasma.fermion.client.MatrixVersion``: a change to one is made to the three.
+    """
+    parts = text.strip().split(".")
+    if len(parts) != _MATRIX_PARTS or not all(_matrix_number(part) for part in parts):
+        return None
+    return ".".join(str(int(part)) for part in parts)
+
+
+def _matrix_number(part: str) -> bool:
+    return 0 < len(part) <= _MATRIX_MAX_DIGITS and all("0" <= c <= "9" for c in part)
+
+
+def _matrix_placeholder(text: str) -> bool:
+    """A template placeholder left unfiltered: ``@gluonify.matrix.version@`` (Maven) or ``${gluonify.matrix.version}``."""
+    maven = len(text) > 1 and text.startswith("@") and text.endswith("@")
+    return maven or (text.startswith("${") and text.endswith("}"))
+
+
+def _announced_matrix(argument: str | None) -> str | None:
+    """The gluonify-matrix version :class:`FermionNode` announces, read once at construction, with one line that says why.
+
+    The ``matrix`` argument, else :data:`ENV_MATRIX` when the argument is absent or blank. Only a release version is announced,
+    in its canonical form (:func:`_matrix_release`); nothing configured logs at DEBUG, an unfiltered placeholder (expected in
+    dev mode) at INFO, any other value (a pre-release suffix, a range, two numbers) at WARNING, and none of them is announced.
+    The :class:`Hello` record itself keeps any text it is given: the contract does not change.
+    """
+    configured = _version(argument) or _version(os.environ.get(ENV_MATRIX))
+    if configured is None:
+        log.debug("fermion-node=matrix none configured, nothing announced")
+        return None
+    release = _matrix_release(configured)
+    if release is not None:
+        log.info("fermion-node=matrix version=%s announced (configured %s)", release, configured)
+    elif _matrix_placeholder(configured):
+        log.info(
+            "fermion-node=matrix value=%s is an unfiltered placeholder (expected in dev mode), nothing announced", configured
+        )
+    else:
+        log.warning(
+            "fermion-node=matrix value=%s is not a release version x.y.z (one to four digits each), nothing announced", configured
+        )
+    return release
+
+
 def _websockets_connect(url: str) -> Any:
     try:
         from websockets.asyncio.client import connect
@@ -653,7 +707,8 @@ class FermionNode:
 
     ``matrix``: the gluonify-matrix bundle version announced in :class:`Hello`; when the argument is absent or blank, the
     environment variable ``GLUONIFY_FERMION_CLIENT_MATRIX`` (:data:`ENV_MATRIX`, read at construction); neither: nothing
-    announced.
+    announced. Only a release version ``x.y.z`` is announced, in its canonical form; an unfiltered placeholder or another value
+    is announced as nothing, with one log line that says why.
     """
 
     def __init__(
@@ -680,7 +735,7 @@ class FermionNode:
         self._handlers = {h.action: h for h in handlers}
         self._used = list(used_workflows)
         self._capacity = capacity
-        self._matrix = _version(matrix) or _version(os.environ.get(ENV_MATRIX))
+        self._matrix = _announced_matrix(matrix)
         self._open_api_url = open_api_url
         self._reconnect = reconnect_interval
         self._heartbeat = heartbeat_interval

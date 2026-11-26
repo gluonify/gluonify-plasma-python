@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -622,3 +623,75 @@ def test_the_matrix_version_travels_in_the_hello_frame(monkeypatch: pytest.Monke
             assert hello.matrix == "0.9.5"
 
     play(scenario)
+
+
+@pytest.mark.parametrize(
+    ("configured", "announced"),
+    [("0.9.4", "0.9.4"), (" 0.9.4 ", "0.9.4"), ("01.2.3", "1.2.3"), ("0.09.0005", "0.9.5"), ("9999.0.10", "9999.0.10")],
+)
+def test_a_release_matrix_version_is_announced_in_its_canonical_form(
+    configured: str, announced: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv(ENV_MATRIX, raising=False)
+    caplog.set_level(logging.DEBUG, logger="gluonify.fermion")
+    node = FermionNode("http://127.0.0.1:1", "tracker", "0", lambda: None, matrix=configured)
+    assert node.hello().matrix == announced
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (logging.INFO, f"fermion-node=matrix version={announced} announced (configured {configured.strip()})")
+    ]
+
+
+DEV_MODE = "(expected in dev mode)"
+
+
+@pytest.mark.parametrize("configured", ["@gluonify.matrix.version@", "${gluonify.matrix.version}", " @gluonify.matrix.version@ "])
+def test_an_unfiltered_placeholder_is_announced_as_nothing_with_one_info_line(
+    configured: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv(ENV_MATRIX, configured)
+    caplog.set_level(logging.DEBUG, logger="gluonify.fermion")
+    node = FermionNode("http://127.0.0.1:1", "tracker", "0", lambda: None)
+    assert node.hello().matrix is None
+    node.hello()
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (
+            logging.INFO,
+            f"fermion-node=matrix value={configured.strip()} is an unfiltered placeholder {DEV_MODE}, nothing announced",
+        )
+    ], "one line, at construction"
+
+
+@pytest.mark.parametrize(
+    "configured",
+    ["1.2", "1.2.3-rc1", "1.2.3.4", "[1.0.0,2.0.0)", "1..2", "12345.0.0", "+1.2.3", "v1.2.3", "@", "${x", "\u0661.\u0662.\u0663"],
+)
+def test_any_other_matrix_value_is_announced_as_nothing_with_one_warning(
+    configured: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv(ENV_MATRIX, raising=False)
+    caplog.set_level(logging.DEBUG, logger="gluonify.fermion")
+    node = FermionNode("http://127.0.0.1:1", "tracker", "0", lambda: None, matrix=configured)
+    assert node.hello().matrix is None
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (
+            logging.WARNING,
+            f"fermion-node=matrix value={configured} is not a release version x.y.z (one to four digits each), nothing announced",
+        )
+    ]
+
+
+@pytest.mark.parametrize("configured", [None, "", "   "])
+def test_no_matrix_version_logs_only_at_debug(
+    configured: str | None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv(ENV_MATRIX, raising=False)
+    caplog.set_level(logging.DEBUG, logger="gluonify.fermion")
+    node = FermionNode("http://127.0.0.1:1", "tracker", "0", lambda: None, matrix=configured)
+    assert node.hello().matrix is None
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (logging.DEBUG, "fermion-node=matrix none configured, nothing announced")
+    ]
+
+
+def test_a_hello_built_by_hand_keeps_any_matrix_text() -> None:
+    assert Hello("a", "n", matrix="1.2.3-rc1").matrix == "1.2.3-rc1", "the contract is unchanged: only the node filters"
