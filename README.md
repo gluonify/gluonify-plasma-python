@@ -176,7 +176,7 @@ What infers what: `gluonify` -> `charm` (its `[gluonify.uses]` entry, JWKS); the
 
 ## 8 ter. Fermion node client
 
-`pip install "gluonify[fermion]"`. The protocol twin (`Auth`, `Hello`, `Start`, `Command`, `Result`, `Progress`, `Done`, `Cancel`, `Error`, `SkillDescriptor`, `NodeCapacity`, `Window`…) writes exactly the JSON of the Java SDK (`to_json`: field order, `t` first, absent values left out, sorted slot maps); `from_json` ignores unknown fields and raises `FermionProtocolError` for an unknown type. A node:
+`pip install "gluonify[fermion]"`. The protocol twin (`Auth`, `Hello`, `Start`, `Command`, `Result`, `Progress`, `Done`, `Cancel`, `Error`, `SkillDescriptor`, `NodeCapacity`, `Window`…) writes exactly the JSON of the Java SDK (`to_json`: field order, `t` first, absent values left out, sorted slot maps); `from_json` ignores unknown fields and raises `FermionProtocolError` for an unknown type. `Hello.matrix` (optional, stripped, blank read as absent, left out of the JSON when absent; the twin of the Java `FermionMsg.Hello.matrix`) is the gluonify-matrix bundle version (default BPMN2/DMN models) the node was built against: fermion loads that verified bundle when it is above its own (gluonify-fermion README, "Automatic schema updates"); a node without the field and a fermion that does not know it both keep working, and the shared fixtures do not carry it. A node:
 
 ```python
 from gluonify.fermion import FermionNode, NodeCapacity, SkillFailure, SkillHandler, TaskContext, INTERRUPTED
@@ -212,6 +212,7 @@ await node.run()  # until await node.stop()
 | cancel | `cancel` sets `context.cancelled`, fills `context.cancel` and calls `on_cancel` (no-op by default); for a task that does not run here the node answers `interrupted` at once |
 | starts | `await start_workflow(workflow, correlation_id, payload, global_transaction_id, organization)`; during an outage the frame waits in a queue of `queue_size` (100), `FermionQueueFullError` when full, replayed after `hello` |
 | `busy` | a handler may raise `SkillFailure(BUSY, …)`: fermion gives the task to another node without counting an attempt |
+| matrix version | `matrix="0.9.5"` announces it in `hello`; absent or blank, the environment variable `GLUONIFY_FERMION_CLIENT_MATRIX` (read when the node is built; the Java property `gluonify.fermion.client.matrix`); neither: nothing announced |
 
 **No `fermion` uses marker: the grant is explicit** (decision of the user, 2026-10-21). Unlike the Java `fermion-client` (a separate artifact that carries its marker), `gluonify.fermion` is part of the base distribution, and an extra adds dependencies, never markers (§8): a marker here would grant Fermion to every Python application. An application that is a Fermion node declares `"uses": ["fermion"]` in its appspec or `gluonify.json` (Bup keeps the declared services); `markers.infer` and Bup ignore a `fermion` marker from any distribution (`explicit uses only`).
 
@@ -296,6 +297,7 @@ There is nothing to configure on the platform. Variables read:
 | `GLUONIFY_OIDC_ISSUER`, `GLUONIFY_OIDC_AUDIENCE` | Charm | expected issuer and audience |
 | `GLUONIFY_OIDC_REALM` | Charm | realm whose keys verify the tokens: `org-<org>` (injected by Higgs for an application of an organization), `gluonify` when absent or empty; another value stops `CharmVerifier.from_env` |
 | `GLUONIFY_CA_FILE` (alias `GLUONIFY_GDOWN_CA_FILE`) | `gluonify.tls.client_context()`: Charm JWKS, Fermion `wss://` | PEM root of the cluster's internal authority, trusted in addition to the system's; absent or unusable: the default context (logged once) |
+| `GLUONIFY_FERMION_CLIENT_MATRIX` | `FermionNode` | gluonify-matrix bundle version announced in `Hello.matrix` when the `matrix` argument is absent or blank; blank: nothing announced |
 | `APP_<KEY>`, `<KEY>` | Top | configuration and secrets |
 | `PORT` | `serve` | listening port (default 8080), host always `0.0.0.0` |
 | `GLUONIFY_TLS_CERTIFICATE_PEM` / `GLUONIFY_TLS_PRIVATE_KEY_PEM` | `serve` (`gluonify.tls.server_context()`) | the port's certificate and key, issued by the cluster's internal authority when the specification sets `tls: true` (internal TLS stage 2: the application opts in with `"tls": true` in `gluonify.json`; Bup checks the entry point `[gluonify.tls] tls` of this distribution); with them the port serves HTTPS only (TLS 1.2 at least); half a pair or a value that is neither PEM nor its base64 stops the start. The key reaches `ssl` through an anonymous memory file on Linux (`memfd`), never a disk; on macOS and Windows (development) through an owner-only temporary file removed at once |
@@ -306,7 +308,7 @@ There is nothing to configure on the platform. Variables read:
 
 ```bash
 uv sync                    # Python 3.13 (.python-version), gluonify[fastapi] in editable mode, dev group
-uv run pytest --cov        # 115 tests (test_lint runs ruff check: a violation fails the tests), coverage >= 99 % required (ratchet, gluonify-plasma README "Quality gates")
+uv run pytest --cov        # 244 tests (test_lint runs ruff check: a violation fails the tests), coverage >= 99 % required (ratchet, gluonify-plasma README "Quality gates")
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                # strict
 uv build --package gluonify  # dist/gluonify-*.whl and sdist

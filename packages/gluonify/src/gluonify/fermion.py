@@ -15,6 +15,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import MISSING, dataclass, field, fields
@@ -35,6 +36,9 @@ INTERRUPTED = "interrupted"
 
 BUSY = "busy"
 """``error_kind`` of a node that cannot take the task now: fermion gives it to another node without counting an attempt."""
+
+ENV_MATRIX = "GLUONIFY_FERMION_CLIENT_MATRIX"
+"""Variable of the gluonify-matrix bundle version announced in :class:`Hello` (Java ``gluonify.fermion.client.matrix``)."""
 
 DEFAULT_ZONE = "Europe/Paris"
 """Zone of a :class:`Window` that names none."""
@@ -301,7 +305,12 @@ class Auth(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Hello(_Record):
-    """Announcement of the node: skills, workflows used, OpenAPI address, optional capacity (empty is ``None``)."""
+    """Announcement of the node: skills, workflows used, OpenAPI address, optional capacity (empty is ``None``).
+
+    ``matrix``: the version of the gluonify-matrix bundle (default BPMN2/DMN models) the node was built against; fermion loads
+    that verified bundle when it is above its own. Optional, stripped, blank read as absent, left out of the JSON when absent;
+    a node without it and a fermion that does not know it both keep working.
+    """
 
     T: ClassVar[str] = "hello"
     app_id: str
@@ -310,12 +319,14 @@ class Hello(_Record):
     used_workflows: list[WorkflowDescriptor] = field(default_factory=list)
     open_api_url: str | None = None
     capacity: NodeCapacity | None = None
+    matrix: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "skills", list(self.skills or []))
         object.__setattr__(self, "used_workflows", list(self.used_workflows or []))
         if self.capacity is not None and self.capacity.empty:
             object.__setattr__(self, "capacity", None)
+        object.__setattr__(self, "matrix", _version(self.matrix))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Hello:
@@ -327,6 +338,15 @@ class Hello(_Record):
         if kw.get("capacity") is not None:
             kw["capacity"] = NodeCapacity.from_dict(kw["capacity"])
         return cls(**kw)
+
+
+def _version(value: Any) -> str | None:
+    """A matrix version: stripped, ``None`` when absent or blank; a non-string value is a malformed frame."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"matrix must be a string, not {type(value).__name__}")
+    return value.strip() or None
 
 
 def _payload(self: Any) -> None:
@@ -629,7 +649,12 @@ def _websockets_connect(url: str) -> Any:
 
 
 class FermionNode:
-    """A Python process as a fermion node. Call :meth:`run` in a task; :meth:`stop` ends it."""
+    """A Python process as a fermion node. Call :meth:`run` in a task; :meth:`stop` ends it.
+
+    ``matrix``: the gluonify-matrix bundle version announced in :class:`Hello`; when the argument is absent or blank, the
+    environment variable ``GLUONIFY_FERMION_CLIENT_MATRIX`` (:data:`ENV_MATRIX`, read at construction); neither: nothing
+    announced.
+    """
 
     def __init__(
         self,
@@ -642,6 +667,7 @@ class FermionNode:
         used_workflows: Sequence[WorkflowDescriptor] = (),
         capacity: NodeCapacity | None = None,
         open_api_url: str | None = None,
+        matrix: str | None = None,
         reconnect_interval: float = 10.0,
         heartbeat_interval: float = 60.0,
         queue_size: int = 100,
@@ -654,6 +680,7 @@ class FermionNode:
         self._handlers = {h.action: h for h in handlers}
         self._used = list(used_workflows)
         self._capacity = capacity
+        self._matrix = _version(matrix) or _version(os.environ.get(ENV_MATRIX))
         self._open_api_url = open_api_url
         self._reconnect = reconnect_interval
         self._heartbeat = heartbeat_interval
@@ -696,7 +723,7 @@ class FermionNode:
     def hello(self) -> Hello:
         """The announcement sent after ``auth``."""
         skills = [h.descriptor() for h in sorted(self._handlers.values(), key=lambda h: h.action)]
-        return Hello(self.app_id, self.node_id, skills, self._used, self._open_api_url, self._capacity)
+        return Hello(self.app_id, self.node_id, skills, self._used, self._open_api_url, self._capacity, self._matrix)
 
     async def start_workflow(
         self,
@@ -874,6 +901,7 @@ def now_utc() -> datetime:
 __all__ = [
     "BUSY",
     "DEFAULT_ZONE",
+    "ENV_MATRIX",
     "INTERRUPTED",
     "PROTOCOL",
     "Auth",

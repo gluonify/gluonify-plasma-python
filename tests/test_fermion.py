@@ -16,6 +16,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from gluonify import fermion
 from gluonify.fermion import (
     BUSY,
+    ENV_MATRIX,
     INTERRUPTED,
     Auth,
     Cancel,
@@ -107,6 +108,31 @@ def test_a_bad_frame_raises_a_protocol_error(text: str) -> None:
 
 def test_auth_never_shows_its_token() -> None:
     assert "secret-value" not in repr(Auth("secret-value"))
+
+
+def test_hello_carries_the_matrix_version_only_when_announced() -> None:
+    announced = Hello("tracker", "0", matrix=" 0.9.5 ")
+    assert announced.matrix == "0.9.5"
+    text = to_json(announced)
+    assert text == '{"t":"hello","appId":"tracker","nodeId":"0","skills":[],"usedWorkflows":[],"matrix":"0.9.5"}'
+    assert from_json(text) == announced
+    assert Hello("a", "n", matrix="  ").matrix is None, "a blank version is no announcement"
+    assert Hello("a", "n").matrix is None, "absent by default"
+    assert "matrix" not in to_json(Hello("a", "n", matrix="")), "the former JSON"
+
+
+def test_an_older_hello_without_matrix_is_read_and_a_later_field_is_ignored() -> None:
+    old = from_json((FIXTURES / "hello-plain.json").read_text(encoding="utf-8"))
+    assert isinstance(old, Hello)
+    assert old.matrix is None, "a node built before the field announces nothing"
+    later = from_json('{"t":"hello","appId":"a","nodeId":"n","matrix":"1.0.0","later":{"x":1}}')
+    assert isinstance(later, Hello)
+    assert later.matrix == "1.0.0"
+    blank = from_json('{"t":"hello","appId":"a","nodeId":"n","matrix":" "}')
+    assert isinstance(blank, Hello)
+    assert blank.matrix is None
+    with pytest.raises(FermionProtocolError, match="matrix"):
+        from_json('{"t":"hello","appId":"a","nodeId":"n","matrix":1}')
 
 
 def test_results_answer_their_command() -> None:
@@ -564,5 +590,35 @@ def test_edge_paths_of_the_node() -> None:
             await server.send(Command("k4", "g", RUN, {}, "Task_Run"))
             await asyncio.wait_for(second.started.wait(), 5)
         assert not node._tasks, "stop cancels the running tasks"
+
+    play(scenario)
+
+
+def test_the_node_announces_its_matrix_version_from_the_argument_then_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    def node(**options: Any) -> FermionNode:
+        return FermionNode("http://127.0.0.1:1", "tracker", "0", lambda: None, **options)
+
+    monkeypatch.delenv(ENV_MATRIX, raising=False)
+    assert ENV_MATRIX == "GLUONIFY_FERMION_CLIENT_MATRIX"
+    assert node().hello().matrix is None, "neither: nothing announced"
+    assert node(matrix="0.9.5").hello().matrix == "0.9.5"
+    monkeypatch.setenv(ENV_MATRIX, " 0.9.6 ")
+    assert node().hello().matrix == "0.9.6"
+    assert node(matrix=" ").hello().matrix == "0.9.6", "a blank argument falls back to the environment"
+    assert node(matrix="0.9.5").hello().matrix == "0.9.5", "the argument comes first"
+    monkeypatch.setenv(ENV_MATRIX, "  ")
+    assert node().hello().matrix is None, "a blank variable is no announcement"
+
+
+def test_the_matrix_version_travels_in_the_hello_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(ENV_MATRIX, raising=False)
+
+    async def scenario() -> None:
+        server = FakeFermion()
+        async with running(server, [Echo()], matrix="0.9.5"):
+            await until(lambda: len(server.frames) >= 2, "auth and hello")
+            hello = server.frames[1]
+            assert isinstance(hello, Hello)
+            assert hello.matrix == "0.9.5"
 
     play(scenario)
